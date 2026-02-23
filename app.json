@@ -20,7 +20,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.calculadoradecampo.agrocota",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAhVKb0aik8Mc_RS-aKBZUDDM9dtSE-26s"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

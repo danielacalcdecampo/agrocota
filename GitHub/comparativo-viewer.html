@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroCota - Comparativo Profissional</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Variáveis de cor baseadas no seu index.html */
+        :root {
+            --bg: #040404;
+            --surface: #0e0e0e;
+            --primary: #22c55e;
+            --text: #f0f0f0;
+            --agro-verde: #2D6A4F;
+            --agro-azul: #1E40AF;
+            --agro-terra: #B45309;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; padding: 20px; }
+        .card { background: var(--surface); border: 1px solid #1e1e1e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .btn-aceite { width: 100%; background: var(--primary); color: #000; padding: 15px; border-radius: 8px; font-weight: 900; cursor: pointer; border: none; }
+        .option-box { border: 2px solid #1e1e1e; padding: 15px; border-radius: 10px; margin-top: 10px; cursor: pointer; transition: 0.3s; }
+        .option-box.selected { border-color: var(--primary); background: #22c55e15; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h2>📊 Comparativo de Investimento</h2>
+        
+        <div class="card">
+            <canvas id="pizzaChart" height="200"></canvas>
+        </div>
+
+        <div class="card">
+            <canvas id="barChart"></canvas>
+        </div>
+
+        <h3>Escolha a Cotação para Aprovar:</h3>
+        <div id="selectionArea"></div>
+        <button class="btn-aceite" onclick="enviarAprovacao()">APROVAR SELEÇÃO</button>
+    </div>
+
+    <script>
+        // Lógica para ler dados da URL (Ex: ?data={JSON_BASE64})
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawData = urlParams.get('data');
+        const payload = JSON.parse(atob(rawData)); // Decodifica o JSON vindo do App
+
+        // Renderização dos Gráficos (Chart.js)
+        const ctxPizza = document.getElementById('pizzaChart').getContext('2d');
+        new Chart(ctxPizza, {
+            type: 'doughnut',
+            data: {
+                labels: payload.cotacoes.map(c => c.titulo),
+                datasets: [{
+                    data: payload.cotacoes.map(c => c.total),
+                    backgroundColor: ['#2D6A4F', '#1E40AF', '#B45309']
+                }]
+            },
+            options: { plugins: { legend: { labels: { color: '#fff' } } } }
+        });
+
+        // Injeção dos Cards de Escolha
+        const area = document.getElementById('selectionArea');
+        payload.cotacoes.forEach((c, index) => {
+            area.innerHTML += `
+                <div class="option-box" onclick="selecionar(${index}, this)">
+                    <strong>${c.titulo}</strong><br>
+                    <span style="color:var(--primary)">R$ ${c.total.toLocaleString('pt-BR')}</span>
+                </div>
+            `;
+        });
+
+        let escolhido = null;
+        function selecionar(idx, el) {
+            document.querySelectorAll('.option-box').forEach(b => b.classList.remove('selected'));
+            el.classList.add('selected');
+            escolhido = payload.cotacoes[idx];
+        }
+
+        function enviarAprovacao() {
+            if(!escolhido) return alert("Selecione uma cotação!");
+            alert("Aprovando: " + escolhido.titulo);
+            // Aqui você conecta com seu backend/Firebase
+        }
+    </script>
+</body>
+</html>

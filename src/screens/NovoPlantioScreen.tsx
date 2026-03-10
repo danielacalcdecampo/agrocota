@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet,
   StatusBar, TextInput, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Modal, FlatList,
+  Platform, Modal, FlatList, ScrollView,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -235,18 +236,22 @@ export default function NovoPlantioScreen({ navigation, route }: Props) {
   const talhaoOptions = [
     { label: 'Fazenda inteira (geral)', value: '' },
     ...talhoes.map(t => ({
-      label: t.area_ha ? `${t.nome}  ·  ${t.area_ha} ha` : t.nome,
+      label: t.area_ha ? `${t.nome}  ï¿½  ${t.area_ha} ha` : t.nome,
       value: t.id,
     })),
   ];
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAwareScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ flexGrow: 1 }}
+      keyboardShouldPersistTaps="handled"
+    >
       <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
 
       <View style={[s.header, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <Text style={s.backTxt}>‹  Voltar</Text>
+          <Text style={s.backTxt}>ï¿½  Voltar</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>{isEdit ? 'Editar Plantio' : 'Novo Registro'}</Text>
         <TouchableOpacity style={s.saveBtn} onPress={salvar} disabled={saving} activeOpacity={0.8}>
@@ -270,7 +275,7 @@ export default function NovoPlantioScreen({ navigation, route }: Props) {
               <Text style={s.selectorFieldLabel}>Cultura *</Text>
               <Text style={[s.selectorValue, !cultura && s.selectorPlaceholder]}>{culturaDisplay}</Text>
             </View>
-            <Text style={s.chevron}>›</Text>
+            <Text style={s.chevron}>ï¿½</Text>
           </TouchableOpacity>
 
           {cultura === '__custom__' && (
@@ -299,7 +304,7 @@ export default function NovoPlantioScreen({ navigation, route }: Props) {
               <Text style={s.selectorFieldLabel}>Sistema de Plantio</Text>
               <Text style={[s.selectorValue, !sistema && s.selectorPlaceholder]}>{sistemaDisplay}</Text>
             </View>
-            <Text style={s.chevron}>›</Text>
+            <Text style={s.chevron}>ï¿½</Text>
           </TouchableOpacity>
 
           <HDivider />
@@ -325,7 +330,7 @@ export default function NovoPlantioScreen({ navigation, route }: Props) {
                   <Text style={s.selectorFieldLabel}>Talhao</Text>
                   <Text style={s.selectorValue}>{talhaoDisplay}</Text>
                 </View>
-                <Text style={s.chevron}>›</Text>
+                <Text style={s.chevron}>ï¿½</Text>
               </TouchableOpacity>
             </>
           )}
@@ -446,7 +451,7 @@ export default function NovoPlantioScreen({ navigation, route }: Props) {
         onSelect={setTalhaoSel}
         onClose={() => setModalTalhao(false)}
       />
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 }
 
@@ -459,6 +464,7 @@ const s = StyleSheet.create({
 
   header: {
     backgroundColor: '#1F4E1F', paddingBottom: 14, paddingHorizontal: 20,
+    minHeight: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: {

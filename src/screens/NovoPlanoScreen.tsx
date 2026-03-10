@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
-  TextInput, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform,
+  View, Text, TouchableOpacity, StyleSheet, StatusBar,
+  TextInput, Alert, ActivityIndicator, Modal, FlatList, Platform, ScrollView,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -249,25 +250,26 @@ export default function NovoPlanoScreen({ navigation, route }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
-
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 14 }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <Text style={s.backTxt}>‹  Voltar</Text>
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>{isEdit ? 'Editar Plano' : 'Novo Plano'}</Text>
-        <TouchableOpacity style={s.saveBtn} onPress={() => salvar('rascunho')} disabled={saving} activeOpacity={0.8}>
-          {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveTxt}>Salvar</Text>}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 80 }]}
+    <View style={{ flex: 1 }}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 0, paddingVertical: 0 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
+
+        {/* Header */}
+        <View style={[s.header, { paddingTop: insets.top + 14 }]}>
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <Text style={s.backTxt}>‹  Voltar</Text>
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>{isEdit ? 'Editar Plano' : 'Novo Plano'}</Text>
+          <TouchableOpacity style={s.saveBtn} onPress={() => salvar('rascunho')} disabled={saving} activeOpacity={0.8}>
+            {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveTxt}>Salvar</Text>}
+          </TouchableOpacity>
+        </View>
+
         {/* Info do plano */}
         <Text style={s.sectionLabel}>Informacoes do Plano</Text>
         <View style={s.card}>
@@ -350,7 +352,7 @@ export default function NovoPlanoScreen({ navigation, route }: Props) {
             <Text style={s.submitTxt}>Enviar para Aprovacao do Produtor</Text>
           </TouchableOpacity>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Selectors */}
       <PickerModal
@@ -366,7 +368,11 @@ export default function NovoPlanoScreen({ navigation, route }: Props) {
 
       {/* Add/Edit item modal */}
       <Modal visible={showAddItem} animationType="slide" transparent onRequestClose={() => setShowAddItem(false)}>
-        <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAwareScrollView
+          style={{ flex: 1, justifyContent: 'flex-end' }}
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
+          bounces={false}
+        >
           <View style={[im.card, { paddingBottom: insets.bottom + 20 }]}>
             <View style={im.header}>
               <TouchableOpacity onPress={() => setShowAddItem(false)}>
@@ -438,12 +444,12 @@ export default function NovoPlanoScreen({ navigation, route }: Props) {
               ) : null}
             </ScrollView>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
       </Modal>
 
       <PickerModal visible={modalCat} title="Categoria" options={CATEGORIAS} selected={newCat} onSelect={setNewCat} onClose={() => setModalCat(false)} />
       <PickerModal visible={modalUn} title="Unidade" options={UNIDADES} selected={newUn} onSelect={setNewUn} onClose={() => setModalUn(false)} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -472,6 +478,7 @@ const s = StyleSheet.create({
   loadRoot: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7F5' },
   header: {
     backgroundColor: '#1F4E1F', paddingBottom: 14, paddingHorizontal: 20,
+    minHeight: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', minWidth: 88, alignItems: 'center' },

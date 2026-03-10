@@ -5,13 +5,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
   ActivityIndicator,
   Alert,
   Image,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../lib/supabase';
@@ -49,6 +49,7 @@ type Props = {
 };
 
 export default function RegisterConsultorScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { refreshProfile, setRegistering } = useAuth();
   const [form, setForm] = useState({
     full_name: '',
@@ -89,8 +90,8 @@ export default function RegisterConsultorScreen({ navigation }: Props) {
 
   const validate = () => {
     if (!form.full_name.trim()) return 'Informe seu nome completo.';
-    if (!form.company_name.trim()) return 'Informe o nome da empresa.';
-    if (form.cnpj.replace(/\D/g, '').length !== 14) return 'CNPJ inválido (14 dígitos).';
+    const cnpjDigits = form.cnpj.replace(/\D/g, '');
+    if (cnpjDigits.length > 0 && cnpjDigits.length !== 14) return 'CNPJ inválido (14 dígitos).';
     if (!form.phone.trim()) return 'Informe seu telefone/WhatsApp.';
     const emailClean = form.email.replace(/\s/g, '');
     if (!emailClean) return 'Informe seu e-mail.';
@@ -128,8 +129,8 @@ export default function RegisterConsultorScreen({ navigation }: Props) {
         id: uid,
         role: 'consultor',
         full_name: form.full_name.trim(),
-        company_name: form.company_name.trim(),
-        cnpj: form.cnpj.replace(/\D/g, ''),
+        company_name: form.company_name.trim() || null,
+        cnpj: form.cnpj.replace(/\D/g, '') || null,
         phone: form.phone.trim(),
         company_logo_url: logoUrl,
       });
@@ -148,12 +149,12 @@ export default function RegisterConsultorScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAwareScrollView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+      bottomOffset={40}
+      keyboardShouldPersistTaps="handled"
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
         {/* Botão Voltar */}
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.8}>
@@ -182,13 +183,13 @@ export default function RegisterConsultorScreen({ navigation }: Props) {
               onChangeText={v => update('full_name', v)} autoCapitalize="words" textContentType="name" />
           </Field>
 
-          <Field label="Nome da Empresa *">
+          <Field label="Nome da Empresa">
             <TextInput style={styles.input} placeholder="Ex: AgroTech Consultoria"
               placeholderTextColor={Colors.textSecondary} value={form.company_name}
               onChangeText={v => update('company_name', v)} autoCapitalize="words" />
           </Field>
 
-          <Field label="CNPJ *">
+          <Field label="CNPJ">
             <TextInput style={styles.input} placeholder="00.000.000/0000-00"
               placeholderTextColor={Colors.textSecondary} value={form.cnpj}
               onChangeText={v => update('cnpj', maskCNPJ(v))} keyboardType="numeric" />
@@ -244,10 +245,9 @@ export default function RegisterConsultorScreen({ navigation }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
+      </KeyboardAwareScrollView>
+    );
+  }
 
 // ─── Field component ──────────────────────────────────────────────────────────
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

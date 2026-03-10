@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>OAgroCota – Painel de Decisão</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── TOKENS ── */
+    :root {
+      --bg: #040404; --surface: #0e0e0e; --surface2: #161616;
+      --border: #1e1e1e; --border2: #2a2a2a;
+      --primary: #22c55e; --primary-dim: #021a09;
+      --text: #f0f0f0; --text-mid: #666; --text-low: #333;
+      --red: #ef4444; --amber: #f59e0b; --blue: #3b82f6;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+    /* ── STATES ── */
+    #state-loading, #state-error {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100svh; gap: 16px;
+    }
+    #state-error { padding: 32px; text-align: center; }
+    .loader { width: 32px; height: 32px; border: 2px solid var(--border2); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .state-label { font-size: .7rem; font-weight: 700; letter-spacing: .1em; color: var(--text-mid); text-transform: uppercase; }
+    .err-title { font-size: .95rem; font-weight: 800; color: var(--red); }
+    .err-body { font-size: .78rem; color: var(--text-mid); margin-top: 6px; }
+
+    /* ── TOP BAR ── */
+    .top-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(4,4,4,.9); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border); padding: 13px 20px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .brand { font-size: .68rem; font-weight: 900; letter-spacing: .2em; color: var(--primary); text-transform: uppercase; flex-shrink: 0; }
+    .top-bar-right { display: flex; align-items: center; gap: 10px; }
+    .status-pill {
+      font-size: .58rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 100px; border: 1px solid var(--border2); color: var(--text-mid);
+    }
+    .status-pill.pendente  { border-color: var(--amber); color: var(--amber); }
+    .status-pill.aprovado  { border-color: var(--primary); color: var(--primary); }
+    .status-pill.recusado  { border-color: var(--red); color: var(--red); }
+    .btn-pdf {
+      font-size: .58rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+      padding: 4px 12px; border-radius: 100px; background: var(--primary); color: #000;
+      border: none; cursor: pointer; transition: opacity .15s;
+    }
+    .btn-pdf:hover { opacity: .85; }
+
+    /* ── PAGE ── */
+    .page { max-width: 700px; margin: 0 auto; padding: 28px 16px 180px; }
+
+    /* ── HEADER SECTION (Consultor / Fazenda) ── */
+    .header-block {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 28px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .logo-box {
+      width: 64px; height: 64px; flex-shrink: 0;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 14px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-box img { width: 100%; height: 100%; object-fit: contain; }
+    .logo-fallback { font-size: .55rem; font-weight: 700; color: var(--text-mid); text-align: center; line-height: 1.3; }
+    .header-info { flex: 1; min-width: 0; }
+    .doc-title { font-size: 1.3rem; font-weight: 900; letter-spacing: -.02em; line-height: 1.2; margin-bottom: 12px; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    @media(max-width: 400px) { .meta-grid { grid-template-columns: 1fr; } }
+    .meta-cell { background: var(--surface); padding: 10px 12px; }
+    .meta-cell.full { grid-column: 1 / -1; }
+    .meta-key { font-size: .58rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 3px; }
+    .meta-val { font-size: .85rem; font-weight: 600; color: var(--text); }
+    .whatsapp-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 12px; padding: 8px 14px; border-radius: 10px;
+      background: #022710; border: 1px solid rgba(34,197,94,.3);
+      font-size: .72rem; font-weight: 700; color: var(--primary); text-decoration: none;
+      transition: background .15s;
+    }
+    .whatsapp-btn:hover { background: #033a18; }
+
+    /* ── DADOS DO TALHÃO ── */
+    .talhao-block {
+      margin-top: 16px; padding: 14px 16px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 14px;
+    }
+    .talhao-block-hd { font-size: .55rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 10px; }
+    .talhao-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; font-size: .78rem; }
+    .talhao-cell .key { font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 2px; }
+    .talhao-cell .val { font-weight: 600; color: var(--text); }
+
+    /* ── ACEITE BANNER ── */
+    .approved-card { background: var(--primary-dim); border: 1px solid var(--primary); border-radius: 18px; padding: 22px; text-align: center; margin-bottom: 28px; }
+    .approved-card.recusado { background: rgba(239,68,68,.08); border-color: var(--red); }
+    .approved-card.recusado .approved-title, .approved-card.recusado .approved-ts { color: var(--red); }
+    .approved-title { font-size: .95rem; font-weight: 900; color: var(--primary); margin-bottom: 5px; }
+    .approved-sub { font-size: .75rem; color: var(--text-mid); }
+    .approved-ts { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--primary); margin-top: 8px; }
+
+    /* ── SECTION HEADER ── */
+    .section-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; margin-top: 36px; }
+    .section-hd h2 { font-size: .62rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--text-mid); white-space: nowrap; }
+    .section-line { flex: 1; height: 1px; background: var(--border); }
+
+    /* ── TOTAL BOX ── */
+    .total-box {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 18px; padding: 20px 22px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .total-box-label { font-size: .65rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 3px; }
+    .total-box-sub { font-size: .65rem; color: var(--text-mid); }
+    .total-box-val { font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 700; color: var(--primary); text-align: right; }
+
+    /* ── CHART ── */
+    .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; gap: 28px; }
+    .chart-canvas-wrap { position: relative; width: 200px; height: 200px; flex-shrink: 0; }
+    canvas#donut { width: 200px !important; height: 200px !important; }
+    .chart-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
+    .chart-center-label { font-size: .55rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); }
+    .chart-center-value { font-family: 'JetBrains Mono', monospace; font-size: .95rem; font-weight: 700; color: var(--text); display: block; line-height: 1.3; }
+    .chart-legend { width: 100%; display: flex; flex-direction: column; gap: 9px; }
+    .legend-row { display: flex; align-items: center; gap: 10px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .legend-name { flex: 1; font-size: .76rem; font-weight: 600; color: var(--text); }
+    .legend-bar-wrap { flex: 1.5; height: 4px; background: var(--border2); border-radius: 99px; overflow: hidden; }
+    .legend-bar { height: 100%; border-radius: 99px; }
+    .legend-val { font-family: 'JetBrains Mono', monospace; font-size: .72rem; font-weight: 700; min-width: 88px; text-align: right; }
+
+    /* ── CATEGORIA CARDS ── */
+    .cat-block { margin-bottom: 16px; border-radius: 16px; overflow: hidden; border: 1px solid var(--border); }
+    .cat-block-header {
+      padding: 11px 16px; color: #fff;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .cat-block-title { font-size: .78rem; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .cat-block-meta  { font-size: .68rem; font-weight: 700; opacity: .85; white-space: nowrap; }
+
+    /* Produto: card com nome + chips + lista de opções */
+    .prod-card { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 14px; }
+    .prod-card:last-child { border-bottom: none; }
+    .prod-card-name { font-size: .88rem; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+
+    /* Chips inline — P.A., Fonte, Estádio, Aplic., etc */
+    .chips-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+    .chip-pa {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: #022710; border: 1px solid rgba(34,197,94,.4);
+      color: #4ade80; padding: 3px 8px; border-radius: 5px;
+      font-size: .6rem; font-weight: 700;
+    }
+    .chip-fonte {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: #0f172a; border: 1px solid rgba(96,165,250,.4);
+      color: #60a5fa; padding: 3px 8px; border-radius: 5px;
+      font-size: .6rem; font-weight: 700;
+    }
+    .chip-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text-mid); padding: 3px 8px; border-radius: 5px;
+      font-size: .6rem; font-weight: 600;
+    }
+    .chip-badge b { color: var(--text); font-weight: 700; }
+    .ck { opacity: .55; font-size: .52rem; text-transform: uppercase; letter-spacing: .06em; }
+
+    /* Cada opção de fornecedor dentro do card */
+    .op-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; padding: 7px 0;
+      border-top: 1px solid var(--border);
+    }
+    .op-row:first-of-type { margin-top: 2px; }
+    .op-left  { flex: 1; min-width: 0; }
+    .op-forn  { font-size: .78rem; font-weight: 700; color: var(--text); }
+    .op-dose  { font-size: .65rem; color: var(--text-mid); margin-top: 2px; }
+    .op-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+    .op-val   { font-family: 'JetBrains Mono', monospace; font-size: .92rem; font-weight: 800; }
+    .badge-menor {
+      font-size: .5rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 4px; background: var(--primary); color: #000;
+    }
+    .badge-maior {
+      font-size: .5rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 4px;
+      background: rgba(239,68,68,.12); color: var(--red); border: 1px solid rgba(239,68,68,.3);
+    }
+
+    /* ── STICKY FOOTER ── */
+    .sticky-footer {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+      background: linear-gradient(to top, var(--bg) 65%, transparent);
+    }
+    .footer-inner { max-width: 700px; margin: 0 auto; }
+    .total-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding: 0 2px; }
+    .total-label-sm { font-size: .62rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); }
+    .total-amount { font-family: 'JetBrains Mono', monospace; font-size: 1.15rem; font-weight: 700; color: var(--text); }
+    .total-sub { font-size: .58rem; color: var(--text-mid); text-align: right; display: block; }
+    .footer-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+    .btn-confirm {
+      width: 100%; background: var(--primary); color: #000; border: none;
+      padding: 16px 24px; border-radius: 15px;
+      font-family: 'Inter', sans-serif; font-size: .75rem; font-weight: 900;
+      letter-spacing: .1em; text-transform: uppercase;
+      cursor: pointer; transition: opacity .18s, transform .12s;
+      box-shadow: 0 0 40px rgba(34,197,94,.12);
+    }
+    .btn-confirm:active { transform: scale(.97); }
+    .btn-confirm:disabled { opacity: .3; cursor: not-allowed; box-shadow: none; }
+    .btn-reject {
+      width: 100%; background: transparent; color: #fca5a5;
+      border: 1px solid rgba(239,68,68,.45); padding: 16px 14px; border-radius: 15px;
+      font-family: 'Inter', sans-serif; font-size: .72rem; font-weight: 900;
+      letter-spacing: .08em; text-transform: uppercase;
+      cursor: pointer; transition: opacity .18s, transform .12s;
+    }
+    .btn-reject:active { transform: scale(.97); }
+    .btn-reject:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── MODAL ── */
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.8); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      display: flex; align-items: flex-end; justify-content: center; padding: 16px;
+      opacity: 0; pointer-events: none; transition: opacity .25s;
+    }
+    .modal-backdrop.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface2); border: 1px solid var(--border2); border-radius: 24px;
+      padding: 26px 22px; width: 100%; max-width: 680px;
+      transform: translateY(24px); transition: transform .3s cubic-bezier(.4,0,.2,1);
+      max-height: 88svh; display: flex; flex-direction: column;
+    }
+    .modal-backdrop.open .modal { transform: translateY(0); }
+    .modal-title { font-size: .95rem; font-weight: 900; margin-bottom: 5px; flex-shrink: 0; }
+    .modal-sub { font-size: .75rem; color: var(--text-mid); margin-bottom: 16px; flex-shrink: 0; }
+    .modal-scroll { overflow-y: auto; flex: 1; }
+    .modal-item { padding: 11px 0; border-bottom: 1px solid var(--border); }
+    .modal-item:last-child { border-bottom: none; }
+    .modal-item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+    .modal-item-name { font-size: .82rem; font-weight: 700; color: var(--text); flex: 1; }
+    .modal-item-price { font-family: 'JetBrains Mono', monospace; font-size: .82rem; font-weight: 700; color: var(--primary); flex-shrink: 0; }
+    .modal-item-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .modal-chip { font-size: .6rem; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--surface); border: 1px solid var(--border); color: var(--text-mid); }
+    .modal-chip b { color: var(--text); font-weight: 700; }
+    .modal-total { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--border2); flex-shrink: 0; }
+    .modal-total-label { font-size: .62rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); }
+    .modal-total-val { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 900; color: var(--text); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; flex-shrink: 0; }
+    .btn-cancel { flex: 1; background: transparent; border: 1px solid var(--border2); color: var(--text-mid); padding: 14px; border-radius: 12px; font-family: 'Inter', sans-serif; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; transition: background .18s; }
+    .btn-cancel:hover { background: var(--border); }
+    .btn-confirm-modal { flex: 2; background: var(--primary); color: #000; border: none; padding: 14px; border-radius: 12px; font-family: 'Inter', sans-serif; font-size: .72rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; transition: opacity .18s; }
+    .btn-confirm-modal:disabled { opacity: .5; cursor: not-allowed; }
+
+    .page-footer { text-align: center; padding: 12px 16px; font-size: .6rem; color: var(--text-low); letter-spacing: .06em; text-transform: uppercase; }
+
+    /* ── PRINT / PDF ── */
+    @media print {
+      body { background: #fff !important; color: #111 !important; }
+      .top-bar, .sticky-footer, .modal-backdrop, .btn-pdf { display: none !important; }
+      .page { padding: 0 !important; max-width: 100% !important; }
+      .chart-wrap, .meta-cell, .cat-detail-wrapper, .badge, .chip-pa, .chip-fonte { background: #f8f8f8 !important; border-color: #ddd !important; color: #111 !important; }
+      .approved-card { background: #e8f5e9 !important; border-color: #4caf50 !important; }
+      canvas { max-width: 160px !important; }
+      .cat-block, .prod-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="state-loading">
+  <div class="loader"></div>
+  <span class="state-label">Carregando cotação</span>
+</div>
+<div id="state-error" style="display:none">
+  <span class="err-title" id="err-title">Link inválido ou expirado</span>
+  <p class="err-body">Solicite um novo link ao consultor responsável.</p>
+</div>
+
+<div id="app" style="display:none">
+  <div class="top-bar">
+    <span class="brand">OAgroCota</span>
+    <div class="top-bar-right">
+      <button class="btn-pdf" onclick="window.print()">Baixar PDF</button>
+      <span class="status-pill pendente" id="status-pill">Aguardando aceite</span>
+    </div>
+  </div>
+
+  <main class="page">
+
+    <!-- HEADER: logo + metadados (igual ao PDF) -->
+    <div class="header-block" id="header-block">
+      <div class="logo-box" id="logo-box">
+        <span class="logo-fallback">Sem<br/>Logo</span>
+      </div>
+      <div class="header-info">
+        <h1 class="doc-title" id="meta-titulo">Cotação</h1>
+        <div class="meta-grid" id="meta-grid"></div>
+        <div class="talhao-block" id="talhao-block" style="display:none">
+          <div class="talhao-block-hd">Dados do Talhão</div>
+          <div class="talhao-grid" id="talhao-grid"></div>
+        </div>
+        <a class="whatsapp-btn" id="whatsapp-btn" style="display:none" target="_blank" rel="noopener">
+          💬 Falar no WhatsApp: <span id="whatsapp-phone"></span>
+        </a>
+      </div>
+    </div>
+
+    <!-- ACEITE BANNER -->
+    <div class="approved-card" id="approved-banner" style="display:none">
+      <div class="approved-title" id="approved-title">Aceite Registrado</div>
+      <div class="approved-sub">Seu consultor foi notificado. Obrigado pela confirmação.</div>
+      <div class="approved-ts" id="approved-ts"></div>
+    </div>
+
+    <!-- TOTAL BOX (como no PDF) -->
+    <div class="total-box" id="total-box" style="display:none">
+      <div>
+        <div class="total-box-label">Investimento Total</div>
+        <div class="total-box-sub" id="total-box-sub">Resumo baseado nas opções de menor custo</div>
+      </div>
+      <div class="total-box-val" id="total-box-val">R$ 0,00</div>
+    </div>
+
+    <!-- COMPOSIÇÃO DE CUSTO -->
+    <div class="section-hd">
+      <h2>Composição de Custo</h2>
+      <div class="section-line"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-canvas-wrap">
+        <canvas id="donut"></canvas>
+        <div class="chart-center">
+          <span class="chart-center-label">Investimento</span>
+          <span class="chart-center-value" id="center-total">R$ 0,00</span>
+        </div>
+      </div>
+      <div class="chart-legend" id="chart-legend"></div>
+    </div>
+
+    <!-- BARRAS VERTICAIS: composição por categoria -->
+    <div class="section-hd" style="margin-top:36px">
+      <h2>Custo por Categoria</h2>
+      <div class="section-line"></div>
+    </div>
+    <div class="chart-wrap" style="padding:20px 16px;">
+      <canvas id="vbar-idx" style="width:100%;max-height:220px;"></canvas>
+    </div>
+
+    <!-- DETALHAMENTO (igual ao PDF: tabelas por categoria) -->
+    <div class="section-hd" style="margin-top:44px">
+      <h2>Detalhamento Completo dos Insumos</h2>
+      <div class="section-line"></div>
+    </div>
+    <div id="prod-list"></div>
+
+  </main>
+
+  <!-- STICKY FOOTER -->
+  <div class="sticky-footer" id="sticky-footer">
+    <div class="footer-inner">
+      <div class="total-row">
+        <div>
+          <div class="total-label-sm">Investimento Total</div>
+          <span class="total-sub" id="footer-count">0 produtos</span>
+        </div>
+        <div style="text-align:right">
+          <div class="total-amount" id="footer-total">R$ 0,00</div>
+        </div>
+      </div>
+      <div class="footer-actions">
+        <button class="btn-reject" id="btn-recusar" onclick="abrirModalRecusa()">Recusar</button>
+        <button class="btn-confirm" id="btn-aceite" onclick="abrirModal()" disabled>Confirmar Aceite</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RECUSA -->
+<div class="modal-backdrop" id="modal-recusar-backdrop" onclick="fecharModalRecusaExterno(event)">
+  <div class="modal" style="max-height:unset">
+    <div class="modal-title">Confirmar Recusa</div>
+    <div class="modal-sub">Ao recusar, o consultor será notificado e esta cotação ficará como recusada.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModalRecusa()">Voltar</button>
+      <button class="btn-confirm-modal" id="btn-recusar-modal" onclick="confirmarRecusa()" style="background:#ef4444;color:#fff">Confirmar Recusa</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ACEITE -->
+<div class="modal-backdrop" id="modal-backdrop" onclick="fecharModalExterno(event)">
+  <div class="modal">
+    <div class="modal-title">Confirmar Aceite</div>
+    <div class="modal-sub">Revise os itens abaixo antes de confirmar. Esta ação registrará data, hora e dispositivo.</div>
+    <div class="modal-scroll" id="modal-summary"></div>
+    <div class="modal-total">
+      <span class="modal-total-label">Investimento Total</span>
+      <span class="modal-total-val" id="modal-total-val">R$ 0,00</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModal()">Voltar</button>
+      <button class="btn-confirm-modal" id="btn-confirm-modal" onclick="confirmarAceite()">Confirmar Aceite</button>
+    </div>
+  </div>
+</div>
+
+<footer class="page-footer">OAgroCota 2025 — Plataforma de Decisão Agrícola</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════ */
+const SUPABASE_URL  = 'https://fafjknchnibdflpqyssf.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_3HDU_nViFfOubXqNplV5ow_8FV0Ix0r';
+
+/* Cores agrícolas por categoria — idêntico ao theme/colors (app, PDFs, viewers) */
+const CAT_AGRICOLA = {
+  Fungicida: '#7C3AED', Herbicida: '#EA580C', Inseticida: '#2563EB', Nematicida: '#0891B2', Defensivo: '#DC2626',
+  Fertilizantes: '#16A34A', 'Nutricao / Fertilizante Foliar': '#16A34A', 'Fertilizante de Base': '#16A34A',
+  Sementes: '#92400E', 'Sementes / Hibridos': '#92400E',
+  Adjuvante: '#CA8A04', Biologico: '#0D9488', 'Corretivo de Solo': '#78716C',
+};
+const CAT_FALLBACK = ['#6366F1', '#DB2777', '#059669', '#F59E0B', '#64748B'];
+const _catColorMap = {};
+function getCatColor(cat) {
+  const c = String(cat || '').trim();
+  if (CAT_AGRICOLA[c]) return CAT_AGRICOLA[c];
+  if (!_catColorMap[c]) _catColorMap[c] = CAT_FALLBACK[Object.keys(_catColorMap).length % CAT_FALLBACK.length];
+  return _catColorMap[c];
+}
+
+function initCatColors(categorias) {
+  [...new Set(categorias)].sort((a, b) => a.localeCompare(b)).forEach(cat => getCatColor(cat));
+}
+
+let chart = null;
+let vbarIdxChart = null;
+let cotacao = null;
+let allItens = [];
+let approved = false;
+let areaFactor = 1;
+
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════ */
+const fmtBRL = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = s => !s ? '—' : new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const fmtDateTime = s => !s ? '—' : new Date(s).toLocaleString('pt-BR');
+const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function normBrPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.startsWith('55') ? digits : '55' + digits;
+}
+function formatBrPhone(raw) {
+  const norm = normBrPhone(raw);
+  if (!norm) return '';
+  const local = norm.slice(2);
+  if (local.length === 11) return `(${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`;
+  return '+' + norm;
+}
+
+async function rpc(fn, params) {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + SUPABASE_ANON, 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) throw new Error('Erro na comunicação com servidor.');
+  return r.json();
+}
+
+function showError(msg) {
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('state-error').style.display = 'flex';
+  if (msg) document.getElementById('err-title').textContent = msg;
+}
+
+function addMeta(key, val, full) {
+  const g = document.getElementById('meta-grid');
+  const c = document.createElement('div');
+  c.className = 'meta-cell' + (full ? ' full' : '');
+  c.innerHTML = '<div class="meta-key">' + esc(key) + '</div><div class="meta-val">' + esc(String(val || '—')) + '</div>';
+  g.appendChild(c);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CHART
+═══════════════════════════════════════════════════════ */
+function buildChart(labels, values, colors) {
+  const ctx = document.getElementById('donut').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#040404', borderWidth: 3, hoverOffset: 8 }] },
+    options: {
+      cutout: '80%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' R$ ' + fmtBRL(c.parsed) } } },
+      animation: { duration: 700, easing: 'easeInOutQuart' },
+    },
+  });
+}
+
+function buildVBarCat(entries, colors) {
+  const el = document.getElementById('vbar-idx');
+  if (!el || !entries.length) return;
+  const ctx = el.getContext('2d');
+  if (vbarIdxChart) vbarIdxChart.destroy();
+  const labels = entries.map(([c]) => c.length > 14 ? c.slice(0, 12) + '…' : c);
+  const values = entries.map(([, v]) => v);
+  const maxVal = Math.max(...values, 1);
+  vbarIdxChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors.map((c, i) => {
+          const v = values[i];
+          return v === maxVal ? c + '99' : c;
+        }),
+        borderColor: colors,
+        borderWidth: 2,
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: ctx => 'R$ ' + fmtBRL(ctx.parsed.y) },
+          backgroundColor: '#0e0e0e',
+          titleColor: '#f0f0f0',
+          bodyColor: '#22c55e',
+          borderColor: '#2a2a2a',
+          borderWidth: 1,
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#888', font: { size: 10, weight: '700' } },
+          grid: { color: '#1e1e1e' },
+        },
+        y: {
+          ticks: {
+            color: '#666',
+            font: { size: 10 },
+            callback: v => {
+              const n = Number(v);
+              if (n >= 1_000_000) return 'R$' + (n / 1_000_000).toFixed(1) + 'M';
+              if (n >= 1_000)     return 'R$' + Math.round(n / 1_000) + 'k';
+              return 'R$' + n;
+            }
+          },
+          grid: { color: '#1e1e1e' },
+        }
+      },
+      animation: { duration: 600, easing: 'easeInOutQuart' },
+    }
+  });
+}
+
+function buildLegend(entries, colors, total) {
+  const el = document.getElementById('chart-legend');
+  el.innerHTML = '';
+  entries.forEach(([cat, val], i) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML =
+      '<div class="legend-dot" style="background:' + colors[i] + '"></div>'
+    + '<div class="legend-name">' + esc(cat) + ' <span style="color:var(--text-mid)">(' + pct.toFixed(1) + '%)</span></div>'
+    + '<div class="legend-bar-wrap"><div class="legend-bar" style="width:' + pct.toFixed(1) + '%;background:' + colors[i] + '"></div></div>'
+    + '<div class="legend-val" style="color:' + colors[i] + '">R$ ' + fmtBRL(val) + '</div>';
+    el.appendChild(row);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   TOTAL CÁLCULO
+   — usa menor valor_ha por produto dentro de cada categoria
+═══════════════════════════════════════════════════════ */
+function calcTotais(itens) {
+  /* agrupa por cat→produto, pega o menor valor */
+  const m = {};
+  itens.forEach(it => {
+    if (!it.produto_nome) return;
+    const cat = it.categoria || 'Insumo';
+    const key = cat + '||' + it.produto_nome;
+    if (!m[key] || Number(it.valor_ha || 0) < Number(m[key])) m[key] = Number(it.valor_ha || 0);
+  });
+  return Object.values(m).reduce((a, v) => a + v, 0);
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER PRODUTOS — estrutura de tabela igual ao PDF
+═══════════════════════════════════════════════════════ */
+function renderProdutos(itens) {
+  /* Agrupa por categoria → produto */
+  const byCat = {};
+  itens.forEach(it => {
+    if (!it.produto_nome) return;
+    const cat = it.categoria || 'Insumo';
+    if (!byCat[cat]) byCat[cat] = {};
+    if (!byCat[cat][it.produto_nome]) byCat[cat][it.produto_nome] = [];
+    byCat[cat][it.produto_nome].push(it);
+  });
+
+  /* Ordena categorias pela soma mínima (maior primeiro) */
+  const catEntries = Object.entries(byCat).map(([cat, prods]) => {
+    const somaMin = Object.values(prods).reduce((s, opts) => {
+      const sv = [...opts].sort((a, b) => (a.valor_ha||0) - (b.valor_ha||0));
+      return s + Number(sv[0]?.valor_ha || 0);
+    }, 0);
+    return { cat, prods, somaMin };
+  });
+  catEntries.sort((a, b) => b.somaMin - a.somaMin);
+
+  const container = document.getElementById('prod-list');
+  container.innerHTML = '';
+
+  catEntries.forEach(({ cat, prods, somaMin }) => {
+    const color = getCatColor(cat);
+    const numProdutos = Object.keys(prods).length;
+
+    /* Bloco da categoria */
+    const block = document.createElement('div');
+    block.className = 'cat-block';
+
+    /* Cabeçalho colorido */
+    const hdr = document.createElement('div');
+    hdr.className = 'cat-block-header';
+    hdr.style.background = color;
+    hdr.innerHTML =
+      '<span class="cat-block-title">' + esc(cat) + '</span>' +
+      '<span class="cat-block-meta">' + numProdutos + ' produto' + (numProdutos !== 1 ? 's' : '') +
+      ' &nbsp;·&nbsp; R$ ' + fmtBRL(somaMin) + '</span>';
+    block.appendChild(hdr);
+
+    /* Cards de produto */
+    const prodEntries = Object.entries(prods).sort((a, b) => a[0].localeCompare(b[0]));
+    prodEntries.forEach(([nome, opts]) => {
+      const sorted = [...opts].sort((a, b) => (a.valor_ha||0) - (b.valor_ha||0));
+      const minVal = Number(sorted[0]?.valor_ha || 0);
+      const maxVal = Number(sorted[sorted.length-1]?.valor_ha || 0);
+      const ref    = sorted[0];
+
+      /* ── Chips do produto ── */
+      const chips = [];
+      const pa    = String(ref.principio_ativo || '').trim();
+      const fonte = String(ref.fonte || '').trim();
+      if (pa)                 chips.push('<span class="chip-pa"><span class="ck">P.A. </span>' + esc(pa) + '</span>');
+      if (fonte)              chips.push('<span class="chip-fonte"><span class="ck">Fonte </span>' + esc(fonte) + '</span>');
+      if (ref.estagio)        chips.push('<span class="chip-badge"><span class="ck">Estádio </span><b>' + esc(ref.estagio) + '</b></span>');
+      if (ref.n_aplicacoes)   chips.push('<span class="chip-badge"><span class="ck">Aplic. </span><b>' + esc(ref.n_aplicacoes) + 'x</b></span>');
+      if (ref.alvo)           chips.push('<span class="chip-badge"><span class="ck">Alvo </span><b>' + esc(ref.alvo) + '</b></span>');
+      if (ref.tecnologia)     chips.push('<span class="chip-badge"><span class="ck">Tecnol. </span><b>' + esc(ref.tecnologia) + '</b></span>');
+      if (ref.grupo_alvo)     chips.push('<span class="chip-badge"><span class="ck">Grupo </span><b>' + esc(ref.grupo_alvo) + '</b></span>');
+      if (ref.campo_adicional)chips.push('<span class="chip-badge"><span class="ck">Campo </span><b>' + esc(ref.campo_adicional) + '</b></span>');
+      if (ref.obs)            chips.push('<span class="chip-badge"><span class="ck">Obs </span><b>' + esc(ref.obs) + '</b></span>');
+
+      /* ── Card do produto ── */
+      const card = document.createElement('div');
+      card.className = 'prod-card';
+
+      let html = '<div class="prod-card-name">' + esc(nome) + '</div>';
+      if (chips.length) html += '<div class="chips-row">' + chips.join('') + '</div>';
+
+      /* ── Opções de fornecedor ── */
+      sorted.forEach(it => {
+        const isMin = sorted.length > 1 && Number(it.valor_ha||0) === minVal;
+        const isMax = sorted.length > 1 && Number(it.valor_ha||0) === maxVal && minVal !== maxVal;
+        const forn  = (it.fornecedor === 'N/I' || !it.fornecedor) ? 'Fornecedor Direto' : it.fornecedor;
+        const dose  = (it.dose_ha != null && it.dose_ha !== 0)
+          ? fmtBRL(Number(it.dose_ha)) + (it.unidade ? ' ' + it.unidade : '')
+          : '';
+
+        html += '<div class="op-row">' +
+          '<div class="op-left">' +
+            '<div class="op-forn">' + esc(forn) + '</div>' +
+            (dose ? '<div class="op-dose">Dose: ' + esc(dose) + '</div>' : '') +
+          '</div>' +
+          '<div class="op-right">' +
+            '<div class="op-val" style="color:' +
+              (isMin ? 'var(--primary)' : isMax ? 'var(--red)' : 'var(--text)') + '">' +
+              'R$ ' + fmtBRL(it.valor_ha || 0) +
+            '</div>' +
+            (isMin ? '<span class="badge-menor">Menor</span>' : '') +
+            (isMax ? '<span class="badge-maior">Maior</span>' : '') +
+          '</div>' +
+        '</div>';
+      });
+
+      card.innerHTML = html;
+      block.appendChild(card);
+    });
+
+    container.appendChild(block);
+  });
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   SYNC — atualiza totais, legenda, gráfico
+═══════════════════════════════════════════════════════ */
+function sync(itens) {
+  const total = calcTotais(itens);
+  document.getElementById('footer-total').textContent = 'R$ ' + fmtBRL(total);
+  document.getElementById('center-total').textContent = 'R$ ' + fmtBRL(total);
+  document.getElementById('total-box-val').textContent = 'R$ ' + fmtBRL(total);
+  document.getElementById('total-box').style.display = total > 0 ? 'flex' : 'none';
+
+  const nProdutos = new Set(itens.map(it => it.produto_nome)).size;
+  document.getElementById('footer-count').textContent = nProdutos + ' produto' + (nProdutos !== 1 ? 's' : '') + ' (' + itens.length + ' opções)';
+  document.getElementById('btn-aceite').disabled = itens.length === 0 || approved;
+
+  /* Totais por categoria (soma mínima) */
+  const byCat = {};
+  itens.forEach(it => {
+    if (!it.produto_nome) return;
+    const cat = it.categoria || 'Insumo';
+    const key = cat + '||' + it.produto_nome;
+    if (!byCat[cat]) byCat[cat] = {};
+    if (!byCat[cat][key] || Number(it.valor_ha || 0) < byCat[cat][key]) byCat[cat][key] = Number(it.valor_ha || 0);
+  });
+  const catTotais = {};
+  Object.entries(byCat).forEach(([cat, prods]) => {
+    catTotais[cat] = Object.values(prods).reduce((a, v) => a + v, 0);
+  });
+
+  const entries = Object.entries(catTotais).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const colors  = entries.map(([c]) => getCatColor(c));
+  const totalChart = entries.reduce((a, [, v]) => a + v, 0);
+
+  if (!entries.length) {
+    buildChart(['Sem itens'], [1], ['#1e1e1e']);
+    buildLegend([], [], 0);
+  } else {
+    buildChart(entries.map(e => e[0]), entries.map(e => e[1]), colors);
+    buildLegend(entries, colors, totalChart);
+    buildVBarCat(entries, colors);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   MODAIS
+═══════════════════════════════════════════════════════ */
+function abrirModal() {
+  if (!allItens.length) return;
+  const total = calcTotais(allItens);
+  const el = document.getElementById('modal-summary');
+  el.innerHTML = '';
+
+  /* Mostra apenas 1 opção (menor) por produto */
+  const seen = {};
+  const byCat = {};
+  allItens.forEach(it => {
+    if (!it.produto_nome) return;
+    const cat = it.categoria || 'Insumo';
+    const key = cat + '||' + it.produto_nome;
+    if (!byCat[cat]) byCat[cat] = {};
+    if (!byCat[cat][key] || Number(it.valor_ha || 0) < byCat[cat][key].valor_ha) {
+      byCat[cat][key] = it;
+    }
+  });
+
+  Object.entries(byCat).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([cat, prods]) => {
+    Object.values(prods).forEach(it => {
+      const chips = [
+        it.principio_ativo ? `<span class="modal-chip"><b>P.A.</b>: ${esc(it.principio_ativo)}</span>` : '',
+        it.fonte ? `<span class="modal-chip"><b>Fonte</b>: ${esc(it.fonte)}</span>` : '',
+        (it.dose_ha != null && it.dose_ha !== '') ? `<span class="modal-chip"><b>Dose</b>: ${fmtBRL(Number(it.dose_ha))}${it.unidade ? ' ' + it.unidade : ''}</span>` : '',
+        it.estagio ? `<span class="modal-chip"><b>Estádio</b>: ${esc(it.estagio)}</span>` : '',
+        it.n_aplicacoes ? `<span class="modal-chip"><b>Aplic.</b>: ${it.n_aplicacoes}x</span>` : '',
+        it.alvo ? `<span class="modal-chip"><b>Alvo</b>: ${esc(it.alvo)}</span>` : '',
+        it.obs ? `<span class="modal-chip"><b>Obs</b>: ${esc(it.obs)}</span>` : '',
+        (it.fornecedor && it.fornecedor !== 'N/I') ? `<span class="modal-chip"><b>Forn.</b>: ${esc(it.fornecedor)}</span>` : '',
+      ].filter(Boolean).join('');
+
+      const row = document.createElement('div');
+      row.className = 'modal-item';
+      row.innerHTML = `
+        <div class="modal-item-top">
+          <div class="modal-item-name">${esc(cat)} — ${esc(it.produto_nome || 'Produto')}</div>
+          <div class="modal-item-price">R$ ${fmtBRL(it.valor_ha || 0)}</div>
+        </div>
+        ${chips ? '<div class="modal-item-chips">' + chips + '</div>' : ''}
+      `;
+      el.appendChild(row);
+    });
+  });
+
+  document.getElementById('modal-total-val').textContent = 'R$ ' + fmtBRL(total);
+  document.getElementById('modal-backdrop').classList.add('open');
+}
+function fecharModal() { document.getElementById('modal-backdrop').classList.remove('open'); }
+function fecharModalExterno(e) { if (e.target === document.getElementById('modal-backdrop')) fecharModal(); }
+function abrirModalRecusa() { if (!approved) document.getElementById('modal-recusar-backdrop').classList.add('open'); }
+function fecharModalRecusa() { document.getElementById('modal-recusar-backdrop').classList.remove('open'); }
+function fecharModalRecusaExterno(e) { if (e.target === document.getElementById('modal-recusar-backdrop')) fecharModalRecusa(); }
+
+async function confirmarAceite() {
+  const btn = document.getElementById('btn-confirm-modal');
+  btn.disabled = true; btn.textContent = 'Registrando...';
+  try {
+    await rpc('registrar_aceite_cotacao', { p_cotacao_id: cotacao.id, p_itens: [], p_total_ha: calcTotais(allItens), p_user_agent: navigator.userAgent });
+    fecharModal();
+    setAprovado(new Date().toISOString());
+  } catch { alert('Erro ao registrar o aceite.'); }
+  finally { btn.disabled = false; btn.textContent = 'Confirmar Aceite'; }
+}
+
+function setAprovado(ts) {
+  approved = true;
+  document.getElementById('status-pill').textContent = 'Aceite registrado';
+  document.getElementById('status-pill').className = 'status-pill aprovado';
+  const banner = document.getElementById('approved-banner');
+  banner.classList.remove('recusado');
+  document.getElementById('approved-title').textContent = 'Aceite Registrado';
+  banner.style.display = 'block';
+  document.getElementById('approved-ts').textContent = 'Registrado em ' + fmtDateTime(ts);
+  document.getElementById('sticky-footer').style.display = 'none';
+}
+
+async function confirmarRecusa() {
+  const btn = document.getElementById('btn-recusar-modal');
+  btn.disabled = true; btn.textContent = 'Registrando...';
+  try {
+    await rpc('registrar_recusa_cotacao', { p_cotacao_id: cotacao.id, p_user_agent: navigator.userAgent });
+    fecharModalRecusa();
+    setRecusado(new Date().toISOString());
+  } catch { alert('Erro ao recusar.'); }
+  finally { btn.disabled = false; btn.textContent = 'Confirmar Recusa'; }
+}
+
+function setRecusado(ts) {
+  approved = true;
+  document.getElementById('status-pill').textContent = 'Recusada';
+  document.getElementById('status-pill').className = 'status-pill recusado';
+  const banner = document.getElementById('approved-banner');
+  banner.classList.add('recusado');
+  document.getElementById('approved-title').textContent = 'Cotação Recusada';
+  banner.style.display = 'block';
+  document.getElementById('approved-ts').textContent = 'Registrado em ' + fmtDateTime(ts);
+  document.getElementById('sticky-footer').style.display = 'none';
+}
+
+/* ═══════════════════════════════════════════════════════
+   REST HELPER — query direta nas tabelas do Supabase
+═══════════════════════════════════════════════════════ */
+async function sbGet(table, params) {
+  const qs = Object.entries(params)
+    .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+    .join('&');
+  const r = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?' + qs, {
+    headers: {
+      apikey: SUPABASE_ANON,
+      Authorization: 'Bearer ' + SUPABASE_ANON,
+      Accept: 'application/json',
+    },
+  });
+  if (!r.ok) return [];
+  return r.json();
+}
+
+/* ═══════════════════════════════════════════════════════
+   MAIN
+═══════════════════════════════════════════════════════ */
+async function main() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('t') || params.get('token');
+  if (!token) { showError('Token não encontrado na URL.'); return; }
+
+  try {
+    /* ── 1. Busca a cotação — RPC primeiro (bypassa RLS, evita recursion) ── */
+    let cotRow = null;
+    try {
+      const rpcRows = await rpc('get_cotacao_by_token', { p_token: token });
+      cotRow = rpcRows && rpcRows[0];
+    } catch (_) {}
+
+    /* Fallback: REST direto (requer policies RLS corretas) */
+    if (!cotRow) {
+      const cotacoes = await sbGet('cotacoes', {
+        select: 'id,titulo,status,created_at,consultor_id,fazenda_id,talhao_id,area_ha,aceite_em,approved_at,excel_itens_json',
+        approval_token: 'eq.' + token,
+        limit: 1,
+      });
+      cotRow = cotacoes[0];
+    }
+    if (!cotRow) {
+      const alt = await sbGet('cotacoes', {
+        select: 'id,titulo,status,created_at,consultor_id,fazenda_id,talhao_id,area_ha,aceite_em,approved_at,excel_itens_json',
+        share_token: 'eq.' + token,
+        limit: 1,
+      });
+      cotRow = alt[0];
+    }
+
+    if (!cotRow) { showError('Cotação não encontrada. Verifique o link.'); return; }
+    cotacao = cotRow;
+
+    console.log('[OAgroCota] cotação carregada:', cotacao.id, '| status:', cotacao.status);
+
+    /* ── 2. Consultor / Empresa — direto na tabela profiles ── */
+    let consultorNome = '—', companyName = '', phone = '', logoUrl = '';
+    if (cotacao.consultor_id) {
+      try {
+        const profiles = await sbGet('profiles', {
+          select: 'full_name,company_name,phone,company_logo_url',
+          id: 'eq.' + cotacao.consultor_id,
+          limit: 1,
+        });
+        if (profiles[0]) {
+          consultorNome = profiles[0].full_name         || '—';
+          companyName   = profiles[0].company_name      || '';
+          phone         = profiles[0].phone             || '';
+          logoUrl       = profiles[0].company_logo_url  || '';
+        }
+      } catch (_) {}
+    }
+
+    /* ── 3. Fazenda — direto na tabela fazendas ── */
+    let fazendaNome = '—', produtorNome = '', municipio = '', estado = '';
+    if (cotacao.fazenda_id) {
+      try {
+        const fazendas = await sbGet('fazendas', {
+          select: 'nome,produtor_nome,municipio,estado',
+          id: 'eq.' + cotacao.fazenda_id,
+          limit: 1,
+        });
+        if (fazendas[0]) {
+          fazendaNome  = fazendas[0].nome          || '—';
+          produtorNome = fazendas[0].produtor_nome || '';
+          municipio    = fazendas[0].municipio     || '';
+          estado       = fazendas[0].estado        || '';
+        }
+      } catch (_) {}
+    }
+    const localizacao = [municipio, estado].filter(Boolean).join(' - ');
+
+    /* ── 4. Talhão — dados reais para área, nome, coordenadas ── */
+    let talhaoAreaHa = 0, talhaoNome = '', talhaoCoordenadas = null;
+    if (cotacao.talhao_id) {
+      try {
+        const talhoes = await sbGet('talhoes', {
+          select: 'nome,area_ha,coordenadas',
+          id: 'eq.' + cotacao.talhao_id,
+          limit: 1,
+        });
+        if (talhoes[0]) {
+          talhaoAreaHa = Number(talhoes[0].area_ha || 0);
+          talhaoNome = String(talhoes[0].nome || '').trim();
+          talhaoCoordenadas = talhoes[0].coordenadas;
+        }
+      } catch (_) {}
+    }
+
+    /* ── 5. Área final (mesma lógica do CotacaoGraficosScreen) ── */
+    const areaManual = Number(cotacao.area_ha || 0);
+    const areaFinal  = areaManual > 0 ? areaManual : (talhaoAreaHa > 0 ? talhaoAreaHa : 0);
+    areaFactor = areaFinal > 0 ? areaFinal : 1;
+
+    /* ── 6. Itens — busca REST direta com TODOS os campos ── */
+    const COLS = [
+      'id','produto_nome','fornecedor','categoria',
+      'valor_ha','dose_ha','unidade',
+      'principio_ativo','fonte',
+      'estagio','n_aplicacoes','obs',
+    ].join(',');
+
+    const rawItens = await sbGet('itens_cotacao', {
+      select: COLS,
+      cotacao_id: 'eq.' + cotacao.id,
+      order: 'categoria.asc,produto_nome.asc',
+    });
+
+    /* Tenta buscar colunas extras (podem não existir no schema) */
+    let extrasMap = {};
+    try {
+      const extras = await sbGet('itens_cotacao', {
+        select: 'id,alvo,tecnologia,grupo_alvo,campo_adicional',
+        cotacao_id: 'eq.' + cotacao.id,
+      });
+      extras.forEach(r => { extrasMap[r.id] = r; });
+    } catch (_) {}
+
+    /* Fallback PA/Fonte do excel_itens_json salvo na cotação */
+    const excelJson = Array.isArray(cotacao.excel_itens_json) ? cotacao.excel_itens_json : [];
+    const excelByNome = {};
+    excelJson.forEach(x => {
+      const nome = (x.nome || x.produto || '').trim();
+      if (nome) excelByNome[nome] = x;
+    });
+
+    allItens = (rawItens || []).map(it => {
+      const ex  = excelByNome[String(it.produto_nome || '').trim()] || {};
+      const ext = extrasMap[it.id] || {};
+      return {
+        ...it,
+        principio_ativo:  it.principio_ativo || ex.ia || ex.principio_ativo || null,
+        fonte:            it.fonte           || ex.fonte || null,
+        alvo:             ext.alvo            || ex.alvo || null,
+        tecnologia:       ext.tecnologia      || ex.tecnologia || null,
+        grupo_alvo:       ext.grupo_alvo      || null,
+        campo_adicional:  ext.campo_adicional || null,
+        valor_ha:         Number(it.valor_ha  || 0) * areaFactor,
+      };
+    });
+
+    console.log('[OAgroCota]', allItens.length, 'itens carregados. Amostra:', {
+      produto_nome:    allItens[0]?.produto_nome,
+      principio_ativo: allItens[0]?.principio_ativo,
+      fonte:           allItens[0]?.fonte,
+      valor_ha:        allItens[0]?.valor_ha,
+    });
+
+    /* ── 7. Inicializa cores alfabéticas (igual ao PDF) ── */
+    const cats = [...new Set(allItens.map(it => it.categoria || 'Insumo'))];
+    initCatColors(cats);
+
+    /* ── 8. Logo ── */
+    if (logoUrl) {
+      document.getElementById('logo-box').innerHTML = `<img src="${esc(logoUrl)}" alt="Logo" />`;
+    }
+
+    /* ── 9. Título ── */
+    document.title = cotacao.titulo || 'Cotação OAgroCota';
+    document.getElementById('meta-titulo').textContent = cotacao.titulo || 'Cotação';
+
+    /* ── 10. Grid de metadados ── */
+    addMeta('Fazenda', fazendaNome, true);
+    if (produtorNome) addMeta('Produtor', produtorNome, true);
+    if (areaFinal > 0) addMeta('Área', fmtBRL(areaFinal) + ' ha');
+    addMeta('Data', fmtDate(cotacao.created_at));
+    addMeta('Consultor', consultorNome);
+    if (companyName) addMeta('Empresa', companyName);
+    if (localizacao) addMeta('Localização', localizacao, true);
+
+    /* ── 10b. Dados do Talhão (nome, área, coordenadas, altitude) ── */
+    const temTalhao = talhaoNome || talhaoCoordenadas || talhaoAreaHa > 0;
+    if (temTalhao) {
+      const tb = document.getElementById('talhao-block');
+      const tg = document.getElementById('talhao-grid');
+      let coordStr = '', altStr = '—';
+      if (talhaoCoordenadas) {
+        const ring = talhaoCoordenadas?.type === 'Polygon' && Array.isArray(talhaoCoordenadas?.coordinates?.[0])
+          ? talhaoCoordenadas.coordinates[0] : [];
+        if (ring.length > 0) {
+          const sum = ring.reduce((a, c) => ({ lat: a.lat + (Array.isArray(c) ? c[1] : 0), lng: a.lng + (Array.isArray(c) ? c[0] : 0) }), { lat: 0, lng: 0 });
+          const lat = sum.lat / ring.length, lng = sum.lng / ring.length;
+          coordStr = lat.toFixed(6) + ', ' + lng.toFixed(6);
+          try {
+            const r = await fetch('https://api.open-elevation.com/api/v1/lookup?locations=' + lat + ',' + lng);
+            const j = await r.json();
+            const e = j?.results?.[0]?.elevation;
+            if (typeof e === 'number') altStr = Math.round(e) + ' m';
+          } catch (_) {}
+        }
+      }
+      const cells = [];
+      if (talhaoNome) cells.push('<div class="talhao-cell"><div class="key">Nome</div><div class="val">' + esc(talhaoNome) + '</div></div>');
+      if (talhaoAreaHa > 0) cells.push('<div class="talhao-cell"><div class="key">Área</div><div class="val">' + fmtBRL(talhaoAreaHa) + ' ha</div></div>');
+      if (coordStr) cells.push('<div class="talhao-cell" style="grid-column:1/-1"><div class="key">Coordenadas (centro)</div><div class="val">' + esc(coordStr) + '</div></div>');
+      cells.push('<div class="talhao-cell"><div class="key">Altitude</div><div class="val">' + esc(altStr) + '</div></div>');
+      tg.innerHTML = cells.join('');
+      tb.style.display = 'block';
+    }
+
+    /* ── 11. WhatsApp ── */
+    if (phone) {
+      const wa = document.getElementById('whatsapp-btn');
+      wa.href = 'https://wa.me/' + normBrPhone(phone);
+      document.getElementById('whatsapp-phone').textContent = formatBrPhone(phone);
+      wa.style.display = 'inline-flex';
+    }
+
+    /* ── 12. Status (aceite/recusa já registrado) ── */
+    const aceiteEm = cotacao.aceite_em || cotacao.approved_at;
+    if (cotacao.status === 'recusada') {
+      setRecusado(aceiteEm || new Date().toISOString());
+    } else if (cotacao.status === 'aprovada' || cotacao.status === 'aprovado' || aceiteEm) {
+      setAprovado(aceiteEm || new Date().toISOString());
+    }
+
+    /* ── 13. Renderiza conteúdo ── */
+    renderProdutos(allItens);
+    sync(allItens);
+
+    /* ── 14. Exibe app ── */
+    document.getElementById('state-loading').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+
+  } catch (e) {
+    console.error('[OAgroCota] Erro fatal:', e);
+    showError('Erro ao carregar os dados.');
+  }
+}
+
+main();
+</script>
+</body>
+</html>

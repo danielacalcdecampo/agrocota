@@ -227,7 +227,7 @@ export default function DetalhePlanoScreen({ navigation, route }: Props) {
                     activeOpacity={0.8}
                   >
                     <Text style={[s.iBtnTxt, item.status === 'aceito' ? s.iBtnTxtAceito : s.iBtnTxtOut]}>
-                      {item.status === 'aceito' ? '✓ Aceito' : 'Aceitar'}
+                      {item.status === 'aceito' ? 'Aceito' : 'Aceitar'}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -256,6 +256,7 @@ const s = StyleSheet.create({
 
   header: {
     backgroundColor: GREEN, paddingBottom: 14, paddingHorizontal: 20,
+    minHeight: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', minWidth: 88, alignItems: 'center' },

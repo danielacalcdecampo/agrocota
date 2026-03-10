@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert,
-  StatusBar, TextInput, Modal, ActivityIndicator, FlatList, ScrollView,
+  StatusBar, TextInput, Modal, ActivityIndicator, FlatList, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import MapView, { Marker, Polygon, Polyline, UrlTile } from 'react-native-maps';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { fetchAltitude } from '../services/TalhaoMapService';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type Props = {
@@ -55,6 +56,21 @@ function calcAreaHa(pts: LatLng[]): number {
   return Math.abs(area / 2) / 10000;
 }
 
+// Calcula o centro do polígono
+function calcCentroid(pts: LatLng[]): LatLng {
+  if (pts.length === 0) return { latitude: 0, longitude: 0 };
+  const sum = pts.reduce((acc, p) => ({
+    latitude: acc.latitude + p.latitude,
+    longitude: acc.longitude + p.longitude
+  }), { latitude: 0, longitude: 0 });
+  return {
+    latitude: sum.latitude / pts.length,
+    longitude: sum.longitude / pts.length
+  };
+}
+
+// (removido: altitude real via TalhaoMapService.fetchAltitude)
+
 // Extracts the first polygon from a KML string
 function parseKMLCoordinates(kml: string): LatLng[] {
   // Support both <coordinates> inside <Polygon> and <LineString>
@@ -95,6 +111,11 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
   const [drawMode, setDrawMode] = useState(false);
   const [drawPoints, setDrawPoints] = useState<LatLng[]>([]);
 
+  // Selected talhão info (legenda)
+  const [selectedTalhao, setSelectedTalhao] = useState<Talhao | null>(null);
+  const [talhaoAltitude, setTalhaoAltitude] = useState<number | null>(null);
+  const [altitudeLoading, setAltitudeLoading] = useState(false);
+
   // Save modal
   const [saveModal, setSaveModal] = useState(false);
   const [nomeNovo, setNomeNovo] = useState('');
@@ -117,10 +138,18 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
   useFocusEffect(useCallback(() => { fetchTalhoes(); }, [fetchTalhoes]));
 
   const handleMapPress = useCallback((e: { nativeEvent: { coordinate: LatLng } }) => {
-    if (!drawMode) return;
+    if (!drawMode) {
+      // Se não está em modo desenho, limpa a seleção ao clicar no mapa
+      setSelectedTalhao(null);
+      return;
+    }
     const coord = { latitude: e.nativeEvent.coordinate.latitude, longitude: e.nativeEvent.coordinate.longitude };
     setDrawPoints(prev => [...prev, coord]);
   }, [drawMode]);
+
+  const handleTalhaoPress = useCallback((talhao: Talhao) => {
+    setSelectedTalhao(talhao);
+  }, []);
 
   const undoLast = () => setDrawPoints(prev => prev.slice(0, -1));
 
@@ -172,182 +201,246 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
   };
 
   const deletarTalhao = (id: string, nome: string) => {
-    Alert.alert('Excluir talhão', `"${nome}" será excluído.`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: async () => {
-        await supabase.from('talhoes').delete().eq('id', id);
-        setTalhoes(prev => prev.filter(t => t.id !== id));
-      }},
-    ]);
+    Alert.alert(
+      'Deletar Talhão',
+      `Tem certeza que deseja deletar o talhão "${nome}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Deletar',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('talhoes').delete().eq('id', id);
+            if (error) Alert.alert('Erro', error.message);
+            else {
+              if (selectedTalhao?.id === id) setSelectedTalhao(null);
+              fetchTalhoes();
+            }
+          },
+        },
+      ]
+    );
   };
 
   const importarKML = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: ['application/vnd.google-earth.kml+xml', 'text/xml', 'application/xml', '*/*'],
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled || !res.assets?.[0]) return;
-      const content = await FileSystem.readAsStringAsync(res.assets[0].uri);
-      const points = parseKMLCoordinates(content);
-      if (points.length < 3) {
-        Alert.alert(
-          'Arquivo invalido',
-          'Nenhum poligono valido encontrado.\n\nNo Google Earth: clique com botao direito no poligono > Salvar local como > Formato KML.'
-        );
-        return;
-      }
-      setDrawPoints(points);
+      const doc = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (doc.canceled) return;
+      const file = doc.assets?.[0];
+      if (!file?.uri) return;
+      const content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
+      const coords = parseKMLCoordinates(content);
+      if (coords.length < 3) { Alert.alert('Erro', 'Não foi possível extrair coordenadas do arquivo KML.'); return; }
+      setDrawPoints(coords);
       setDrawMode(true);
-      // Fly map to the imported polygon
-      if (mapRef.current) {
-        const lats = points.map(p => p.latitude);
-        const lngs = points.map(p => p.longitude);
-        mapRef.current.animateToRegion({
-          latitude: (Math.max(...lats) + Math.min(...lats)) / 2,
-          longitude: (Math.max(...lngs) + Math.min(...lngs)) / 2,
-          latitudeDelta: (Math.max(...lats) - Math.min(...lats)) * 1.5 + 0.002,
-          longitudeDelta: (Math.max(...lngs) - Math.min(...lngs)) * 1.5 + 0.002,
-        }, 800);
-      }
-    } catch {
-      Alert.alert('Erro', 'Nao foi possivel ler o arquivo KML.');
+    } catch (err: any) {
+      Alert.alert('Erro', err.message || 'Não foi possível ler o arquivo.');
     }
   };
 
-  // Memoised so existing polygons don't re-render while drawing
-  const talhaoPolygons = useMemo(() =>
-    talhoes.filter(t => t.coordenadas?.coordinates?.[0]?.length > 0).map(t => {
-      const coords: LatLng[] = (t.coordenadas.coordinates[0] as [number, number][]).map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-      return (
-        <Polygon
-          key={t.id}
-          coordinates={coords}
-          strokeColor={t.cor ?? '#2E7D32'}
-          fillColor={(t.cor ?? '#2E7D32') + '55'}
-          strokeWidth={2}
-          tappable
-          onPress={() => Alert.alert(
-            t.nome,
-            [
-              t.cultura ? `Cultura: ${t.cultura}` : '',
-              t.sistema_plantio ? `Sistema: ${t.sistema_plantio}` : '',
-              t.area_ha ? `Area: ${t.area_ha} ha` : '',
-            ].filter(Boolean).join('\n'),
-            [
-              { text: 'Fechar' },
-              { text: 'Excluir', style: 'destructive', onPress: () => deletarTalhao(t.id, t.nome) },
-            ]
-          )}
-        />
-      );
-    })
-  , [talhoes]);
+  const polygons = useMemo(() => talhoes.map(t => {
+    const coords = t.coordenadas?.type === 'Polygon' && Array.isArray(t.coordenadas.coordinates?.[0])
+      ? t.coordenadas.coordinates[0].map((c: [number, number]) => ({ latitude: c[1], longitude: c[0] }))
+      : [];
+    return { ...t, coords };
+  }), [talhoes]);
 
-  const centralRegion = fazendaLoc
-    ? { latitude: fazendaLoc.latitude, longitude: fazendaLoc.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }
-    : { latitude: -15, longitude: -54, latitudeDelta: 30, longitudeDelta: 30 };
+  const initialRegion = useMemo(() => {
+    if (fazendaLoc) return { ...fazendaLoc, latitudeDelta: 0.02, longitudeDelta: 0.02 };
+    return { latitude: -15.7942, longitude: -47.8822, latitudeDelta: 0.1, longitudeDelta: 0.1 };
+  }, [fazendaLoc]);
+
+  // Calcula infos síncronas + busca altitude real via API
+  const selectedTalhaoInfo = useMemo(() => {
+    if (!selectedTalhao) return null;
+    const coords = selectedTalhao.coordenadas?.type === 'Polygon' && Array.isArray(selectedTalhao.coordenadas.coordinates?.[0])
+      ? selectedTalhao.coordenadas.coordinates[0].map((c: [number, number]) => ({ latitude: c[1], longitude: c[0] }))
+      : [];
+    if (coords.length === 0) return null;
+    const centroid = calcCentroid(coords);
+    return { ...selectedTalhao, centroid, coords };
+  }, [selectedTalhao]);
+
+  useEffect(() => {
+    if (!selectedTalhaoInfo) {
+      setTalhaoAltitude(null);
+      return;
+    }
+    let cancelled = false;
+    setAltitudeLoading(true);
+    fetchAltitude(selectedTalhaoInfo.centroid.latitude, selectedTalhaoInfo.centroid.longitude)
+      .then(alt => { if (!cancelled) setTalhaoAltitude(alt); })
+      .catch(() => { if (!cancelled) setTalhaoAltitude(null); })
+      .finally(() => { if (!cancelled) setAltitudeLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedTalhaoInfo?.centroid?.latitude, selectedTalhaoInfo?.centroid?.longitude]);
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#193C19" />
+      
+      {/* Header */}
+      <View style={[s.header, { paddingTop: insets.top > 0 ? 0 : 14 }]}>
+        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <Text style={s.backTxt}>← Voltar</Text>
+        </TouchableOpacity>
+        <Text style={s.headerTitle} numberOfLines={1}>{fazendaNome}</Text>
+      </View>
 
-      {loading ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#2E7D32" />
+      {/* Draw Instructions */}
+      {drawMode && (
+        <View style={s.drawInstructions}>
+          <Text style={s.drawInstructionsTxt}>
+            Toque no mapa para marcar os cantos do talhão
+          </Text>
         </View>
-      ) : (
-        <>
-          {/* ── Header ── */}
-          <View style={s.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} activeOpacity={0.8}>
-              <Text style={s.backTxt}>‹  Voltar</Text>
-            </TouchableOpacity>
-            <Text style={s.headerTitle} numberOfLines={1}>Talhoes — {fazendaNome}</Text>
-          </View>
+      )}
 
-          {/* ── Map container, flex: 1 ── */}
-          <View style={s.mapContainer}>
-            <MapView
-              ref={mapRef}
-              style={s.map}
-              initialRegion={centralRegion}
-              scrollEnabled={true}
-              zoomEnabled={true}
-              rotateEnabled={false}
-              pitchEnabled={false}
-              onPress={handleMapPress}
-            >
-              <UrlTile
-                urlTemplate="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                maximumZ={19}
-                flipY={false}
-                zIndex={-1}
+      {/* Map */}
+      <View style={s.mapContainer}>
+        {loading ? (
+          <View style={s.loadingContainer}>
+            <ActivityIndicator size="large" color="#2E7D32" />
+            <Text style={s.loadingTxt}>Carregando talhões...</Text>
+          </View>
+        ) : (
+          <MapView
+            ref={mapRef}
+            style={s.map}
+            initialRegion={initialRegion}
+            onPress={handleMapPress}
+            mapType="satellite"
+            showsUserLocation
+            showsMyLocationButton
+          >
+            {polygons.map(p => p.coords.length > 0 && (
+              <Polygon
+                key={p.id}
+                coordinates={p.coords}
+                fillColor={`${p.cor}40`}
+                strokeColor={p.cor}
+                strokeWidth={3}
+                tappable
+                onPress={() => handleTalhaoPress(p)}
               />
-              {fazendaLoc && <Marker coordinate={fazendaLoc} pinColor="#2E7D32" title={fazendaNome} />}
-              {talhaoPolygons}
-              {drawMode && drawPoints.length >= 3 && (
-                <Polygon coordinates={drawPoints} fillColor={corNovo + '40'} strokeColor={corNovo} strokeWidth={3} />
-              )}
-              {drawMode && drawPoints.length >= 2 && (
-                <Polyline coordinates={drawPoints} strokeColor={corNovo} strokeWidth={3} />
-              )}
-            </MapView>
-
-            {/* Instruction banner — absolute inside map */}
-            {drawMode && (
-              <View style={s.drawInstructions}>
-                <Text style={s.drawInstructionsTxt}>
-                  Toque no mapa para adicionar pontos e formar o contorno do talhao
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* ── Talhões chips (only when not drawing) ── */}
-          {!drawMode && talhoes.length > 0 && (
-            <View style={s.listPanel}>
-              <FlatList
-                data={talhoes}
-                keyExtractor={t => t.id}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[s.talhaoChip, { borderColor: item.cor }]}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      if (!item.coordenadas?.coordinates?.[0]?.length) return;
-                      const coords: LatLng[] = (item.coordenadas.coordinates[0] as [number, number][]).map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
-                      const lats = coords.map(c => c.latitude);
-                      const lngs = coords.map(c => c.longitude);
-                      mapRef.current?.animateToRegion({
-                        latitude: (Math.max(...lats) + Math.min(...lats)) / 2,
-                        longitude: (Math.max(...lngs) + Math.min(...lngs)) / 2,
-                        latitudeDelta: Math.max(...lats) - Math.min(...lats) + 0.005,
-                        longitudeDelta: Math.max(...lngs) - Math.min(...lngs) + 0.005,
-                      }, 600);
-                    }}
-                  >
-                    <View style={[s.talhaoChipDot, { backgroundColor: item.cor }]} />
-                    <Text style={s.talhaoChipTxt} numberOfLines={1}>{item.nome}</Text>
-                    {item.area_ha ? <Text style={s.talhaoChipArea}>{item.area_ha}ha</Text> : null}
-                  </TouchableOpacity>
+            ))}
+            {drawPoints.length > 0 && (
+              <>
+                <Polyline coordinates={drawPoints} strokeColor="#FFD700" strokeWidth={3} />
+                {drawPoints.length > 2 && (
+                  <Polygon coordinates={drawPoints} fillColor="rgba(255,215,0,0.2)" strokeColor="#FFD700" strokeWidth={3} />
                 )}
-              />
-            </View>
-          )}
+                {drawPoints.map((pt, idx) => (
+                  <Marker key={idx} coordinate={pt} anchor={{ x: 0.5, y: 0.5 }}>
+                    <View style={s.markerDot}>
+                      <Text style={s.markerNum}>{idx + 1}</Text>
+                    </View>
+                  </Marker>
+                ))}
+              </>
+            )}
+          </MapView>
+        )}
 
-          {/* ── Draw controls / Bottom bar ── */}
+        {/* Legenda com informações do talhão selecionado */}
+        {selectedTalhaoInfo && !drawMode && (
+          <View style={s.infoCard}>
+            <View style={s.infoHeader}>
+              <View style={s.infoTitleRow}>
+                <View style={[s.infoDot, { backgroundColor: selectedTalhaoInfo.cor }]} />
+                <Text style={s.infoTitle} numberOfLines={1}>{selectedTalhaoInfo.nome}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedTalhao(null)} style={s.closeBtn}>
+                <Text style={s.closeBtnTxt}>X</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.infoContent}>
+              <View style={s.infoRow}>
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Area</Text>
+                  <Text style={s.infoValue}>{selectedTalhaoInfo.area_ha?.toFixed(2) || '0.00'} ha</Text>
+                </View>
+                
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Altitude</Text>
+                  <Text style={s.infoValue}>
+                    {altitudeLoading ? '…' : talhaoAltitude != null ? `${talhaoAltitude} m` : '—'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={s.infoRow}>
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Latitude</Text>
+                  <Text style={s.infoValueSmall}>{selectedTalhaoInfo.centroid.latitude.toFixed(6)}</Text>
+                </View>
+
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Longitude</Text>
+                  <Text style={s.infoValueSmall}>{selectedTalhaoInfo.centroid.longitude.toFixed(6)}</Text>
+                </View>
+              </View>
+
+              <View style={s.infoRow}>
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Cultura</Text>
+                  <Text style={s.infoValue} numberOfLines={1}>{selectedTalhaoInfo.cultura || 'N/D'}</Text>
+                </View>
+
+                <View style={s.infoItemCompact}>
+                  <Text style={s.infoLabel}>Sistema</Text>
+                  <Text style={s.infoValue} numberOfLines={1}>{selectedTalhaoInfo.sistema_plantio || 'N/D'}</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={s.deleteFullBtn} 
+              onPress={() => deletarTalhao(selectedTalhaoInfo.id, selectedTalhaoInfo.nome)}
+              activeOpacity={0.8}
+            >
+              <Text style={s.deleteBtnTxt}>Deletar Talhao</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* Lista de talhões */}
+      {!loading && !drawMode && talhoes.length > 0 && !selectedTalhao && (
+        <View style={s.listPanel}>
+          <FlatList
+            horizontal
+            data={polygons}
+            keyExtractor={p => p.id}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[s.talhaoChip, { borderColor: item.cor }]}
+                onPress={() => handleTalhaoPress(item)}
+                activeOpacity={0.8}
+              >
+                <View style={[s.talhaoChipDot, { backgroundColor: item.cor }]} />
+                <Text style={s.talhaoChipTxt} numberOfLines={1}>{item.nome}</Text>
+                <Text style={s.talhaoChipArea}>({item.area_ha?.toFixed(1) || 0} ha)</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      )}
+
+      {/* Controls */}
+      {!loading && (
+        <>
           {drawMode ? (
             <View style={s.drawControls}>
               <View style={s.drawRow}>
                 <TouchableOpacity style={s.drawCtrlBtn} onPress={undoLast} disabled={drawPoints.length === 0} activeOpacity={0.8}>
-                  <Text style={[s.drawCtrlTxt, { color: '#F59E0B' }]}>Desfazer</Text>
+                  <Text style={[s.drawCtrlTxt, { color: '#2E7D32' }]}>← Desfazer</Text>
                 </TouchableOpacity>
                 <View style={s.drawAreaCenter}>
-                  <Text style={s.drawAreaLabel}>Area estimada</Text>
+                  <Text style={s.drawAreaLabel}>ÁREA ESTIMADA</Text>
                   <Text style={s.drawAreaValue}>{calcAreaHa(drawPoints).toFixed(2)} ha</Text>
                 </View>
                 <TouchableOpacity style={s.drawCtrlBtn} onPress={limparDesenho} disabled={drawPoints.length === 0} activeOpacity={0.8}>
@@ -363,32 +456,40 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
                 <Text style={s.confirmBtnTxt}>Confirmar ({drawPoints.length} pontos)</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.cancelBtn} onPress={cancelDraw}>
-                <Text style={s.cancelTxt}>Cancelar</Text>
+                <Text style={s.cancelTxt}>Cancelar Desenho</Text>
               </TouchableOpacity>
-              <View style={{ height: insets.bottom }} />
+              <View style={{ height: insets.bottom || 16 }} />
             </View>
           ) : (
-            <View style={s.bottomBar}>
+            <View style={[s.bottomBar, { paddingBottom: insets.bottom || 12 }]}>
               <TouchableOpacity style={s.newTalhaoBtn} onPress={() => setDrawMode(true)} activeOpacity={0.85}>
-                <Text style={s.newTalhaoBtnTxt}>+ Desenhar Talhao</Text>
+                <Text style={s.newTalhaoBtnTxt}>Desenhar Talhao</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.importKmlBtn} onPress={importarKML} activeOpacity={0.85}>
                 <Text style={s.importKmlTxt}>Importar KML</Text>
               </TouchableOpacity>
             </View>
           )}
-          <View style={{ height: insets.bottom, backgroundColor: 'rgba(255,255,255,0.97)' }} />
         </>
       )}
 
       {/* Save Modal */}
       <Modal visible={saveModal} transparent animationType="slide" onRequestClose={() => setSaveModal(false)}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={s.modalOverlay}>
-          <View style={s.modalCard}>
+          <View style={[s.modalCard, { paddingBottom: insets.bottom + 24 }]}>
             <Text style={s.modalTitle}>Salvar Talhao</Text>
-            <Text style={s.modalSub}>Area estimada: {calcAreaHa(drawPoints).toFixed(2)} ha</Text>
-            <Text style={s.inputLabel}>Nome do talhao *</Text>
-            <TextInput style={s.input} value={nomeNovo} onChangeText={setNomeNovo} placeholder="Ex: Talhao 1, Gleba Norte..." placeholderTextColor="#bbb" />
+            <Text style={s.modalSub}>Área estimada: {calcAreaHa(drawPoints).toFixed(2)} ha</Text>
+            
+            <Text style={s.inputLabel}>Nome do talhão *</Text>
+            <TextInput 
+              style={s.input} 
+              value={nomeNovo} 
+              onChangeText={setNomeNovo} 
+              placeholder="Ex: Talhão 1, Gleba Norte..." 
+              placeholderTextColor="#bbb" 
+            />
+            
             <Text style={s.inputLabel}>Cultura</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
               {CULTURAS_TALHAO.map(c => (
@@ -402,6 +503,7 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            
             <Text style={s.inputLabel}>Sistema de Plantio</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
               {SISTEMAS_PLANTIO.map(sp => (
@@ -415,12 +517,19 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <Text style={s.inputLabel}>Cor</Text>
+            
+            <Text style={s.inputLabel}>Cor do Talhão</Text>
             <View style={s.coresRow}>
               {CORES.map(c => (
-                <TouchableOpacity key={c} style={[s.coreDot, { backgroundColor: c }, corNovo === c && s.coreSelected]} onPress={() => setCorNovo(c)} />
+                <TouchableOpacity 
+                  key={c} 
+                  style={[s.coreDot, { backgroundColor: c }, corNovo === c && s.coreSelected]} 
+                  onPress={() => setCorNovo(c)} 
+                  activeOpacity={0.7}
+                />
               ))}
             </View>
+            
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.modalCancelBtn} onPress={() => setSaveModal(false)} disabled={saving}>
                 <Text style={s.modalCancelTxt}>Cancelar</Text>
@@ -431,6 +540,7 @@ export default function TalhoesMapaScreen({ navigation, route }: Props) {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -440,84 +550,457 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#193C19' },
   header: {
     backgroundColor: '#193C19',
-    paddingVertical: 14, paddingHorizontal: 20,
-    flexDirection: 'row', alignItems: 'center',
+    minHeight: 60,
+    paddingVertical: 12, 
+    paddingHorizontal: 16,
+    flexDirection: 'row', 
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   backBtn: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, marginRight: 10,
-    backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
-    minWidth: 88, alignItems: 'center',
+    paddingHorizontal: 14, 
+    paddingVertical: 8, 
+    borderRadius: 20, 
+    marginRight: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)', 
+    borderWidth: 1, 
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   backTxt: { color: '#A5D6A7', fontSize: 14, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: 16, fontWeight: '800', flex: 1 },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800', flex: 1 },
   drawInstructions: {
-    position: 'absolute', top: 10, left: 16, right: 16, zIndex: 11,
-    backgroundColor: 'rgba(254,243,199,0.95)', borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14,
+    position: 'absolute', 
+    top: 16, 
+    left: 16, 
+    right: 16, 
+    zIndex: 11,
+    backgroundColor: 'rgba(255,235,59,0.95)', 
+    borderRadius: 12, 
+    paddingVertical: 12, 
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  drawInstructionsTxt: { color: '#92400E', fontSize: 13, textAlign: 'center', fontWeight: '500' },
+  drawInstructionsTxt: { 
+    color: '#795548', 
+    fontSize: 14, 
+    textAlign: 'center', 
+    fontWeight: '600' 
+  },
   mapContainer: { flex: 1 },
   map: { width: '100%', height: '100%' },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  loadingTxt: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  markerDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFD700',
+    borderWidth: 3,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  markerNum: {
+    color: '#1A2E1A',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  
+  // Info Card (Legenda)
+  infoCard: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8F5E9',
+  },
+  infoTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  infoDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A2E1A',
+    flex: 1,
+  },
+  closeBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeBtnTxt: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '700',
+  },
+  infoContent: {
+    marginBottom: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  infoItemCompact: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#2E7D32',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    letterSpacing: 0.3,
+  },
+  infoValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A2E1A',
+  },
+  infoValueSmall: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1A2E1A',
+  },
+  deleteFullBtn: {
+    backgroundColor: '#FFEBEE',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#D32F2F',
+  },
+
   listPanel: {
-    backgroundColor: 'rgba(255,255,255,0.97)', paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.97)', 
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
   },
   talhaoChip: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#F7F8F7',
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 2,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#fff',
+    borderRadius: 24, 
+    paddingHorizontal: 14, 
+    paddingVertical: 8, 
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  talhaoChipDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
-  talhaoChipTxt: { fontSize: 13, fontWeight: '700', color: '#1A2E1A', maxWidth: 100 },
-  talhaoChipArea: { fontSize: 11, color: '#888', marginLeft: 4 },
+  talhaoChipDot: { 
+    width: 12, 
+    height: 12, 
+    borderRadius: 6, 
+    marginRight: 8,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  talhaoChipTxt: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#1A2E1A', 
+    maxWidth: 100 
+  },
+  talhaoChipArea: { 
+    fontSize: 12, 
+    color: '#666', 
+    marginLeft: 4,
+    fontWeight: '600',
+  },
   drawControls: {
     backgroundColor: 'rgba(255,255,255,0.97)',
-    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8,
+    paddingHorizontal: 16, 
+    paddingTop: 14, 
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
   },
-  drawRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  drawCtrlBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 },
-  drawCtrlTxt: { fontSize: 14, fontWeight: '700' },
-  drawAreaCenter: { flex: 2, alignItems: 'center' },
-  drawAreaLabel: { fontSize: 11, color: '#888' },
-  drawAreaValue: { fontSize: 20, fontWeight: '800', color: '#1A2E1A' },
+  drawRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 12 
+  },
+  drawCtrlBtn: { 
+    flex: 1, 
+    alignItems: 'center', 
+    paddingVertical: 8 
+  },
+  drawCtrlTxt: { 
+    fontSize: 14, 
+    fontWeight: '700' 
+  },
+  drawAreaCenter: { 
+    flex: 2, 
+    alignItems: 'center' 
+  },
+  drawAreaLabel: { 
+    fontSize: 10, 
+    color: '#888',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  drawAreaValue: { 
+    fontSize: 24, 
+    fontWeight: '900', 
+    color: '#2E7D32' 
+  },
   confirmBtn: {
-    backgroundColor: '#2E7D32', borderRadius: 12, paddingVertical: 14,
-    alignItems: 'center', marginBottom: 6,
+    backgroundColor: '#2E7D32', 
+    borderRadius: 14, 
+    paddingVertical: 16,
+    alignItems: 'center', 
+    marginBottom: 8,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  confirmBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  cancelBtn: { width: '100%', alignItems: 'center', paddingVertical: 8 },
-  cancelTxt: { color: '#E53935', fontWeight: '700', fontSize: 13 },
+  confirmBtnTxt: { 
+    color: '#fff', 
+    fontWeight: '800', 
+    fontSize: 16 
+  },
+  cancelBtn: { 
+    width: '100%', 
+    alignItems: 'center', 
+    paddingVertical: 10 
+  },
+  cancelTxt: { 
+    color: '#E53935', 
+    fontWeight: '700', 
+    fontSize: 14 
+  },
   bottomBar: {
-    backgroundColor: 'rgba(255,255,255,0.97)', padding: 12,
-    flexDirection: 'row', gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.97)', 
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    flexDirection: 'row', 
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
   },
   newTalhaoBtn: {
-    flex: 1, backgroundColor: '#2E7D32', borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+    flex: 1, 
+    backgroundColor: '#2E7D32', 
+    borderRadius: 14, 
+    paddingVertical: 16, 
+    alignItems: 'center',
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  newTalhaoBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  newTalhaoBtnTxt: { 
+    color: '#fff', 
+    fontWeight: '800', 
+    fontSize: 15 
+  },
   importKmlBtn: {
-    flex: 1, backgroundColor: '#1565C0', borderRadius: 12, paddingVertical: 14, alignItems: 'center',
+    flex: 1, 
+    backgroundColor: '#1976D2', 
+    borderRadius: 14, 
+    paddingVertical: 16, 
+    alignItems: 'center',
+    shadowColor: '#1976D2',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  importKmlTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1A2E1A', marginBottom: 4 },
-  modalSub: { fontSize: 13, color: '#888', marginBottom: 20 },
-  inputLabel: { fontSize: 12, fontWeight: '700', color: '#2E7D32', marginBottom: 6, textTransform: 'uppercase' },
+  importKmlTxt: { 
+    color: '#fff', 
+    fontWeight: '800', 
+    fontSize: 15 
+  },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+    justifyContent: 'flex-end' 
+  },
+  modalCard: { 
+    backgroundColor: '#fff', 
+    borderTopLeftRadius: 24, 
+    borderTopRightRadius: 24, 
+    padding: 24,
+  },
+  modalTitle: { 
+    fontSize: 22, 
+    fontWeight: '900', 
+    color: '#1A2E1A', 
+    marginBottom: 4 
+  },
+  modalSub: { 
+    fontSize: 14, 
+    color: '#666', 
+    marginBottom: 24,
+    fontWeight: '600',
+  },
+  inputLabel: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#2E7D32', 
+    marginBottom: 8, 
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   input: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 14,
-    paddingVertical: 11, fontSize: 15, color: '#222', marginBottom: 14,
+    borderWidth: 2, 
+    borderColor: '#E0E0E0', 
+    borderRadius: 12, 
+    paddingHorizontal: 16,
+    paddingVertical: 14, 
+    fontSize: 16, 
+    color: '#222', 
+    marginBottom: 18,
+    backgroundColor: '#FAFAFA',
   },
   pickChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fafafa',
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 20,
+    borderWidth: 2, 
+    borderColor: '#E0E0E0', 
+    backgroundColor: '#FAFAFA',
   },
-  pickChipSel: { backgroundColor: '#2E7D32', borderColor: '#2E7D32' },
-  pickChipTxt: { fontSize: 13, color: '#555', fontWeight: '600' },
-  pickChipTxtSel: { color: '#fff' },
-  coresRow: { flexDirection: 'row', gap: 10, marginBottom: 24, marginTop: 4 },
-  coreDot: { width: 32, height: 32, borderRadius: 16 },
-  coreSelected: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 4 },
-  modalBtns: { flexDirection: 'row', gap: 12 },
-  modalCancelBtn: { flex: 1, backgroundColor: '#f0f0f0', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  modalCancelTxt: { color: '#666', fontWeight: '700', fontSize: 15 },
-  modalSaveBtn: { flex: 2, backgroundColor: '#2E7D32', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  modalSaveTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  pickChipSel: { 
+    backgroundColor: '#2E7D32', 
+    borderColor: '#2E7D32' 
+  },
+  pickChipTxt: { 
+    fontSize: 13, 
+    color: '#555', 
+    fontWeight: '700' 
+  },
+  pickChipTxtSel: { 
+    color: '#fff' 
+  },
+  coresRow: { 
+    flexDirection: 'row', 
+    gap: 12, 
+    marginBottom: 28, 
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
+  coreDot: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+  },
+  coreSelected: { 
+    borderWidth: 4, 
+    borderColor: '#1A2E1A', 
+    shadowColor: '#000', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 4, 
+    shadowOffset: { width: 0, height: 2 }, 
+    elevation: 6,
+    transform: [{ scale: 1.1 }],
+  },
+  modalBtns: { 
+    flexDirection: 'row', 
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelBtn: { 
+    flex: 1, 
+    backgroundColor: '#F5F5F5', 
+    borderRadius: 14, 
+    paddingVertical: 16, 
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+  },
+  modalCancelTxt: { 
+    color: '#666', 
+    fontWeight: '700', 
+    fontSize: 16 
+  },
+  modalSaveBtn: { 
+    flex: 2, 
+    backgroundColor: '#2E7D32', 
+    borderRadius: 14, 
+    paddingVertical: 16, 
+    alignItems: 'center',
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalSaveTxt: { 
+    color: '#fff', 
+    fontWeight: '800', 
+    fontSize: 16 
+  },
 });

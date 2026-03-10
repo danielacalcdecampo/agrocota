@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "93320771090",
+    "project_id": "agrocota-97040",
+    "storage_bucket": "agrocota-97040.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:93320771090:android:dccfaae7bab523201e0acb",
+        "android_client_info": {
+          "package_name": "com.calculadoradecampo.agrocota"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDW0mRlCdgf3I6-w4A3jHRpUPWHi4tQeSs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

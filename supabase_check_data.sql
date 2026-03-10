@@ -26,7 +26,8 @@ BEGIN
   SET email='excluido_' || v_uid::text || '@agrocota.deleted', email_confirmed_at=NULL, updated_at=now()
   WHERE id = v_uid;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 -- PASSO 3: VIEWS PERMANENTES (Supabase Studio > Table Editor > Views)
 
@@ -37,7 +38,8 @@ DROP VIEW IF EXISTS unconfirmed_accounts;
 DROP VIEW IF EXISTS deleted_accounts;
 
 -- TODAS as contas: ativas, nao confirmadas e excluidas
-CREATE VIEW admin_accounts AS
+CREATE VIEW admin_accounts
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   COALESCE(p.original_email, u.email) AS email,
@@ -61,7 +63,8 @@ LEFT JOIN auth.users u ON u.id = p.id
 ORDER BY p.created_at DESC;
 
 -- Somente ATIVAS (e-mail confirmado)
-CREATE VIEW active_accounts AS
+CREATE VIEW active_accounts
+WITH (security_invoker = true) AS
 SELECT p.id, u.email, p.full_name AS nome, p.company_name AS empresa,
   p.cnpj, p.phone AS telefone, p.company_logo_url AS foto_url,
   u.email_confirmed_at AS confirmada_em, p.created_at AS cadastrado_em
@@ -71,7 +74,8 @@ WHERE p.status = 'active' AND u.email_confirmed_at IS NOT NULL
 ORDER BY p.created_at DESC;
 
 -- Somente NAO CONFIRMADAS
-CREATE VIEW unconfirmed_accounts AS
+CREATE VIEW unconfirmed_accounts
+WITH (security_invoker = true) AS
 SELECT p.id, u.email, p.full_name AS nome, p.company_name AS empresa, p.created_at AS cadastrado_em
 FROM profiles p
 LEFT JOIN auth.users u ON u.id = p.id
@@ -79,11 +83,17 @@ WHERE p.status = 'active' AND u.email_confirmed_at IS NULL
 ORDER BY p.created_at DESC;
 
 -- Somente EXCLUIDAS (e-mail original salvo, liberado para novo cadastro)
-CREATE VIEW deleted_accounts AS
+CREATE VIEW deleted_accounts
+WITH (security_invoker = true) AS
 SELECT p.id, p.original_email AS email, p.full_name AS nome, p.company_name AS empresa,
   p.cnpj, p.phone AS telefone, p.deleted_at AS excluida_em, p.deleted_reason AS motivo, p.created_at AS cadastrado_em
 FROM profiles p WHERE p.status = 'deleted'
 ORDER BY p.deleted_at DESC;
+
+REVOKE ALL ON TABLE public.admin_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.active_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.unconfirmed_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.deleted_accounts FROM anon, authenticated;
 
 -- PASSO 4: CONSULTAS DE VERIFICACAO
 

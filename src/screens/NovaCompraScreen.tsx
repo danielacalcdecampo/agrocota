@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
-  TextInput, Alert, ActivityIndicator, Modal, FlatList,
-  KeyboardAvoidingView, Platform,
+  View, Text, TouchableOpacity, StyleSheet, StatusBar,
+  TextInput, Alert, ActivityIndicator, Modal, FlatList, Platform,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -199,7 +199,13 @@ export default function NovaCompraScreen({ navigation, route }: Props) {
   if (loading) return <View style={s.loadRoot}><ActivityIndicator size="large" color="#2E7D32" /></View>;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 60 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
 
       {/* Header */}
@@ -213,14 +219,9 @@ export default function NovaCompraScreen({ navigation, route }: Props) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 60 }]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Produto */}
-        <Text style={s.sectionLabel}>Produto</Text>
-        <View style={s.card}>
+      {/* Produto */}
+      <Text style={s.sectionLabel}>Produto</Text>
+      <View style={s.card}>
 
           <TouchableOpacity style={s.selectorRow} onPress={() => setModalCat(true)} activeOpacity={0.8}>
             <View style={{ flex: 1 }}>
@@ -349,7 +350,7 @@ export default function NovaCompraScreen({ navigation, route }: Props) {
             />
           </View>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <PickerModal
         visible={modalCat} title="Categoria"
@@ -372,7 +373,7 @@ export default function NovaCompraScreen({ navigation, route }: Props) {
         onSelect={setTalhaoSel}
         onClose={() => setModalTalhao(false)}
       />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -384,6 +385,7 @@ const s = StyleSheet.create({
   loadRoot: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7F5' },
   header: {
     backgroundColor: '#1F4E1F', paddingBottom: 14, paddingHorizontal: 20,
+    minHeight: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)', minWidth: 88, alignItems: 'center' },

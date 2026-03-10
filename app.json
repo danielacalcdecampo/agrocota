@@ -1,35 +1,79 @@
 {
   "expo": {
-    "name": "agrocota",
+    "name": "OAgroCota",
     "slug": "agrocota",
     "version": "1.0.0",
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/icon.png",
+      "name": "OAgroCota",
+      "shortName": "OAgroCota",
+      "themeColor": "#1a5c25",
+      "backgroundColor": "#ffffff"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.calculadoradecampo.agrocota",
+      "infoPlist": {
+        "NSContactsUsageDescription": "Este aplicativo precisa de acesso aos contatos para importar dados do produtor diretamente para o cadastro.",
+        "NSLocationWhenInUseUsageDescription": "O app usa sua localização para marcar propriedades no mapa.",
+        "NSPhotoLibraryUsageDescription": "Permissão para salvar e selecionar fotos nas anotações.",
+        "NSCameraUsageDescription": "Permissão para tirar fotos nas anotações de campo."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "READ_CONTACTS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "package": "com.calculadoradecampo.agrocota",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAhVKb0aik8Mc_RS-aKBZUDDM9dtSE-26s"
         }
       }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain",
+          "imageWidth": 380
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1F6B3A",
+          "defaultChannel": "agrocota-consultor"
+        }
+      ],
+      "expo-sqlite",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Permitir que o Agrocota acesse seus contatos."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e4f28885-e31e-419e-8caf-053d220976fd"
+      }
     }
   }
 }

@@ -1,16 +1,19 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet,
   StatusBar, TextInput, Alert, ActivityIndicator, Platform,
-  KeyboardAvoidingView, Modal, FlatList,
+  Modal, FlatList,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import MapView, { Marker, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as Contacts from 'expo-contacts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useThemeMode } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 // -------------------------------------------------
@@ -38,7 +41,6 @@ const CULTURAS_LISTA = [
   'Girassol', 'Amendoim', 'Milheto', 'Gergelim', 'Mandioca',
 ];
 
-// Module-level cache -- fetched once per app session
 let _ibgeCache: IBGEMunicipio[] | null = null;
 
 async function fetchIBGE(): Promise<IBGEMunicipio[]> {
@@ -60,6 +62,7 @@ function normAccent(str: string) {
 
 export default function CadastrarPropriedadeScreen({ navigation, route }: Props) {
   const { session } = useAuth();
+  const { isDark } = useThemeMode();
   const { fazendaId } = route.params ?? {};
   const isEdit = !!fazendaId;
   const mapRef = useRef<MapView>(null);
@@ -96,13 +99,9 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(isEdit);
 
-  // Pre-warm IBGE cache silently
   useEffect(() => { fetchIBGE().catch(() => {}); }, []);
-
-  // Auto GPS on first cadastro
   useEffect(() => { if (!isEdit) { obterGPS(); } }, []);
 
-  // Load data when editing
   useEffect(() => {
     if (!isEdit) return;
     (async () => {
@@ -153,6 +152,34 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
       setGpsLoading(false);
     }
   }, []);
+
+  // --- Import Contact ---
+
+  const importarContato = async () => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão negada', 'Precisamos de acesso aos contatos para importar os dados.');
+        return;
+      }
+
+      const selectedContact = await Contacts.presentContactPickerAsync();
+
+      if (selectedContact) {
+        setProdutorNome(selectedContact.name || '');
+        
+        if (selectedContact.phoneNumbers && selectedContact.phoneNumbers.length > 0) {
+          setProdutorPhone(selectedContact.phoneNumbers[0].number || '');
+        }
+
+        if (selectedContact.emails && selectedContact.emails.length > 0) {
+          setProdutorEmail(selectedContact.emails[0].email || '');
+        }
+      }
+    } catch (err) {
+      Alert.alert('Erro', 'Não foi possível acessar a agenda de contatos.');
+    }
+  };
 
   // --- City autocomplete ---
 
@@ -250,7 +277,7 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
   // --- Render ---
 
   if (loadingData) {
-    return <View style={s.loadingRoot}><ActivityIndicator size="large" color="#2E7D32" /></View>;
+    return <View style={[s.loadingRoot, { backgroundColor: isDark ? '#0F1712' : '#F5F7F5' }]}><ActivityIndicator size="large" color="#2E7D32" /></View>;
   }
 
   const initialRegion = {
@@ -260,8 +287,30 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
     longitudeDelta: longitude ? 0.07 : 28,
   };
 
+  const palette = {
+    pageBg: isDark ? '#0F1712' : '#F5F7F5',
+    sectionLabel: isDark ? '#8DE1A9' : '#2E7D32',
+    cardBg: isDark ? '#17241C' : '#FFFFFF',
+    cardBorder: isDark ? '#24372B' : '#E8EDE8',
+    divider: isDark ? '#24372B' : '#F0F2F0',
+    label: isDark ? '#8FA898' : '#999999',
+    input: isDark ? '#E8F2EC' : '#1A1A1A',
+    placeholder: isDark ? '#6F8576' : '#BBBBBB',
+    suggestionsBg: isDark ? '#1A2A21' : '#FAFCFA',
+    hint: isDark ? '#8FA898' : '#BBBBBB',
+    coords: isDark ? '#B8CCBE' : '#666666',
+    selectorMuted: isDark ? '#6F8576' : '#BBBBBB',
+    modalBg: isDark ? '#17241C' : '#FFFFFF',
+    modalBorder: isDark ? '#24372B' : '#F0F2F0',
+    modalRowBorder: isDark ? '#213429' : '#F8F8F8',
+    modalTitle: isDark ? '#E8F2EC' : '#1A2E1A',
+    modalText: isDark ? '#B8CCBE' : '#555555',
+    customInputBg: isDark ? '#1D2F24' : '#F5F7F5',
+    customInputText: isDark ? '#E8F2EC' : '#222222',
+  };
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={{ flex: 1, backgroundColor: palette.pageBg }}>
       <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
 
       {/* Header */}
@@ -275,36 +324,45 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 60 }]} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 60, backgroundColor: palette.pageBg }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
-        {/* Produtor */}
-        <Text style={s.sectionLabel}>Produtor</Text>
-        <View style={s.card}>
-          <Field label="Nome" value={produtorNome} onChangeText={setProdutorNome} placeholder="Nome do produtor" />
-          <HDivider />
+        {/* Produtor com Botão de Agenda */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 4 }}>
+          <Text style={[s.sectionLabel, { color: palette.sectionLabel }]}>Produtor</Text>
+          <TouchableOpacity onPress={importarContato} activeOpacity={0.7} style={{ marginBottom: 8 }}>
+            <Text style={{ color: palette.sectionLabel, fontSize: 11, fontWeight: '800' }}>IMPORTAR AGENDA</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={[s.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}>
+          <Field label="Nome" value={produtorNome} onChangeText={setProdutorNome} placeholder="Nome do produtor" isDark={isDark} />
+          <HDivider isDark={isDark} />
           <Field label="Telefone / WhatsApp" value={produtorPhone} onChangeText={setProdutorPhone}
-            placeholder="(66) 99999-9999" keyboardType="phone-pad" autoCapitalize="none" />
-          <HDivider />
+            placeholder="(66) 99999-9999" keyboardType="phone-pad" autoCapitalize="none" isDark={isDark} />
+          <HDivider isDark={isDark} />
           <Field label="E-mail" value={produtorEmail} onChangeText={setProdutorEmail}
-            placeholder="email@dominio.com" keyboardType="email-address" autoCapitalize="none" />
+            placeholder="email@dominio.com" keyboardType="email-address" autoCapitalize="none" isDark={isDark} />
         </View>
 
         {/* Fazenda */}
-        <Text style={s.sectionLabel}>Fazenda</Text>
-        <View style={s.card}>
-          <Field label="Nome da fazenda *" value={fazendaNome} onChangeText={setFazendaNome} placeholder="Fazenda Boa Vista" />
-          <HDivider />
+        <Text style={[s.sectionLabel, { color: palette.sectionLabel }]}>Fazenda</Text>
+        <View style={[s.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}>
+          <Field label="Nome da fazenda *" value={fazendaNome} onChangeText={setFazendaNome} placeholder="Fazenda Boa Vista" isDark={isDark} />
+          <HDivider isDark={isDark} />
 
-          {/* Municipio com autocomplete IBGE */}
           <View style={s.field}>
-            <Text style={s.fieldLabel}>Municipio</Text>
+            <Text style={[s.fieldLabel, { color: palette.label }]}>Municipio</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <TextInput
-                style={[s.fieldInput, { flex: 1 }]}
+                style={[s.fieldInput, { flex: 1, color: palette.input }]}
                 value={municipio}
                 onChangeText={onCidadeChange}
                 placeholder="Digite a cidade..."
-                placeholderTextColor="#bbb"
+                placeholderTextColor={palette.placeholder}
                 autoCapitalize="words"
                 autoCorrect={false}
                 onBlur={() => setTimeout(() => setShowSugestoes(false), 200)}
@@ -315,52 +373,51 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
             </View>
           </View>
 
-          {/* Dropdown sugestoes */}
           {showSugestoes && sugestoes.length > 0 && (
-            <View style={s.suggestionsBox}>
+            <View style={[s.suggestionsBox, { backgroundColor: palette.suggestionsBg, borderTopColor: palette.cardBorder }]}>
               {sugestoes.map((m, idx) => (
                 <TouchableOpacity
                   key={m.id}
-                  style={[s.suggestionRow, idx > 0 && { borderTopWidth: 1, borderTopColor: '#F0F2F0' }]}
+                  style={[s.suggestionRow, idx > 0 && { borderTopWidth: 1, borderTopColor: palette.divider }]}
                   onPress={() => selecionarCidade(m)}
                   activeOpacity={0.7}
                 >
-                  <Text style={s.suggestionCity}>{m.nome}</Text>
-                  <Text style={s.suggestionState}> - {m.microrregiao.mesorregiao.UF.sigla}</Text>
+                  <Text style={[s.suggestionCity, { color: palette.input }]}>{m.nome}</Text>
+                  <Text style={[s.suggestionState, { color: palette.label }]}> - {m.microrregiao.mesorregiao.UF.sigla}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          <HDivider />
+          <HDivider isDark={isDark} />
           <View style={s.row}>
             <View style={{ flex: 1 }}>
               <Field label="Estado" value={estado} onChangeText={setEstado} placeholder="MT"
-                maxLength={2} autoCapitalize="characters" />
+                maxLength={2} autoCapitalize="characters" isDark={isDark} />
             </View>
-            <View style={s.vDivider} />
+            <View style={[s.vDivider, { backgroundColor: palette.divider }]} />
             <View style={{ flex: 2 }}>
               <Field label="Area total (ha)" value={areaHa} onChangeText={setAreaHa}
-                placeholder="1500" keyboardType="numeric" autoCapitalize="none" />
+                placeholder="1500" keyboardType="numeric" autoCapitalize="none" isDark={isDark} />
             </View>
           </View>
-          <HDivider />
+          <HDivider isDark={isDark} />
           <Field label="Observacoes" value={observacoes} onChangeText={setObservacoes}
-            placeholder="Informacoes adicionais sobre a propriedade..." multiline />
+            placeholder="Informacoes adicionais sobre a propriedade..." multiline isDark={isDark} />
         </View>
 
         {/* Culturas */}
-        <Text style={s.sectionLabel}>Culturas</Text>
-        <View style={s.card}>
+        <Text style={[s.sectionLabel, { color: palette.sectionLabel }]}>Culturas</Text>
+        <View style={[s.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}>
           <TouchableOpacity style={s.selectorRow} onPress={() => setCulturasModal(true)} activeOpacity={0.8}>
-            <Text style={[s.selectorTxt, culturas.length === 0 && { color: '#bbb' }]}>
+            <Text style={[s.selectorTxt, { color: palette.input }, culturas.length === 0 && { color: palette.selectorMuted }]}>
               {culturas.length === 0 ? 'Selecionar culturas...' : culturas.join(', ')}
             </Text>
-            <Text style={s.selectorArrow}>{'>'}</Text>
+            <Text style={[s.selectorArrow, { color: palette.selectorMuted }]}>{'>'}</Text>
           </TouchableOpacity>
           {culturas.length > 0 && (
             <>
-              <HDivider />
+              <HDivider isDark={isDark} />
               <View style={s.chipsWrap}>
                 {culturas.map(c => (
                   <TouchableOpacity key={c} style={s.chipSel} onPress={() => removerCultura(c)} activeOpacity={0.8}>
@@ -373,10 +430,10 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
         </View>
 
         {/* Localizacao */}
-        <Text style={s.sectionLabel}>Localizacao</Text>
-        <View style={s.card}>
+        <Text style={[s.sectionLabel, { color: palette.sectionLabel }]}>Localizacao</Text>
+        <View style={[s.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}>
           <View style={s.locRow}>
-            <Text style={s.coordsTxt}>
+            <Text style={[s.coordsTxt, { color: palette.coords }]}>
               {latitude != null && longitude != null
                 ? `${latitude.toFixed(6)},  ${longitude.toFixed(6)}`
                 : 'Localizacao nao definida'}
@@ -387,7 +444,7 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
                 : <Text style={s.gpsBtnTxt}>Minha Localizacao</Text>}
             </TouchableOpacity>
           </View>
-          <Text style={s.mapHint}>Toque no mapa para ajustar a posicao</Text>
+          <Text style={[s.mapHint, { color: palette.hint }]}>Toque no mapa para ajustar a posicao</Text>
           <MapView
             ref={mapRef}
             style={s.map}
@@ -410,7 +467,7 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
         </View>
 
         <View style={{ height: 48 }} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Modal Culturas */}
       <Modal
@@ -420,9 +477,9 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
         onRequestClose={() => { setCulturasModal(false); setShowCustomInput(false); }}
       >
         <View style={s.modalOverlay}>
-          <View style={s.modalCard}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>Culturas</Text>
+          <View style={[s.modalCard, { backgroundColor: palette.modalBg }] }>
+            <View style={[s.modalHeader, { borderBottomColor: palette.modalBorder }] }>
+              <Text style={[s.modalTitle, { color: palette.modalTitle }]}>Culturas</Text>
               <TouchableOpacity onPress={() => { setCulturasModal(false); setShowCustomInput(false); }}>
                 <Text style={s.modalDone}>Pronto</Text>
               </TouchableOpacity>
@@ -436,25 +493,25 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
               renderItem={({ item }) => {
                 const sel = culturas.includes(item);
                 return (
-                  <TouchableOpacity style={s.culturaRow} onPress={() => toggleCultura(item)} activeOpacity={0.8}>
-                    <View style={[s.checkbox, sel && s.checkboxSel]}>
+                  <TouchableOpacity style={[s.culturaRow, { borderTopColor: palette.modalRowBorder }]} onPress={() => toggleCultura(item)} activeOpacity={0.8}>
+                    <View style={[s.checkbox, { borderColor: isDark ? '#3A4F41' : '#ddd' }, sel && s.checkboxSel]}>
                       {sel && <Text style={s.checkmark}>v</Text>}
                     </View>
-                    <Text style={[s.culturaRowTxt, sel && s.culturaRowTxtSel]}>{item}</Text>
+                    <Text style={[s.culturaRowTxt, { color: palette.modalText }, sel && s.culturaRowTxtSel, sel && isDark && { color: '#8DE1A9' }]}>{item}</Text>
                   </TouchableOpacity>
                 );
               }}
               ListFooterComponent={
                 <View>
-                  <View style={s.modalDivider} />
+                  <View style={[s.modalDivider, { backgroundColor: palette.modalBorder }]} />
                   {showCustomInput ? (
                     <View style={s.customRow}>
                       <TextInput
-                        style={s.customInput}
+                        style={[s.customInput, { backgroundColor: palette.customInputBg, color: palette.customInputText }]}
                         value={customCultura}
                         onChangeText={setCustomCultura}
                         placeholder="Nome da cultura..."
-                        placeholderTextColor="#bbb"
+                        placeholderTextColor={palette.placeholder}
                         autoFocus
                         autoCapitalize="words"
                         onSubmitEditing={adicionarCustom}
@@ -465,7 +522,7 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity style={s.culturaRow} onPress={() => setShowCustomInput(true)} activeOpacity={0.8}>
+                    <TouchableOpacity style={[s.culturaRow, { borderTopColor: palette.modalRowBorder }]} onPress={() => setShowCustomInput(true)} activeOpacity={0.8}>
                       <Text style={s.outrasBtn}>+ Outras culturas</Text>
                     </TouchableOpacity>
                   )}
@@ -475,7 +532,7 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -483,19 +540,19 @@ export default function CadastrarPropriedadeScreen({ navigation, route }: Props)
 // Sub-components
 // -------------------------------------------------
 
-function Field({ label, value, onChangeText, placeholder, keyboardType, multiline, maxLength, autoCapitalize }: {
+function Field({ label, value, onChangeText, placeholder, keyboardType, multiline, maxLength, autoCapitalize, isDark = false }: {
   label: string; value: string; onChangeText: (t: string) => void; placeholder?: string;
-  keyboardType?: any; multiline?: boolean; maxLength?: number; autoCapitalize?: any;
+  keyboardType?: any; multiline?: boolean; maxLength?: number; autoCapitalize?: any; isDark?: boolean;
 }) {
   return (
     <View style={s.field}>
-      <Text style={s.fieldLabel}>{label}</Text>
+      <Text style={[s.fieldLabel, { color: isDark ? '#8FA898' : '#999' }]}>{label}</Text>
       <TextInput
-        style={[s.fieldInput, multiline && { height: 72, textAlignVertical: 'top', paddingTop: 2 }]}
+        style={[s.fieldInput, { color: isDark ? '#E8F2EC' : '#1A1A1A' }, multiline && { height: 72, textAlignVertical: 'top', paddingTop: 2 }]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#bbb"
+        placeholderTextColor={isDark ? '#6F8576' : '#bbb'}
         keyboardType={keyboardType}
         multiline={multiline}
         maxLength={maxLength}
@@ -506,8 +563,8 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, multilin
   );
 }
 
-function HDivider() {
-  return <View style={{ height: 1, backgroundColor: '#F0F2F0', marginLeft: 16 }} />;
+function HDivider({ isDark = false }: { isDark?: boolean }) {
+  return <View style={{ height: 1, backgroundColor: isDark ? '#24372B' : '#F0F2F0', marginLeft: 16 }} />;
 }
 
 // -------------------------------------------------
@@ -519,6 +576,7 @@ const s = StyleSheet.create({
 
   header: {
     backgroundColor: '#1F4E1F', paddingTop: 14, paddingBottom: 14, paddingHorizontal: 20,
+    minHeight: 80,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: {

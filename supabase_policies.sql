@@ -271,7 +271,8 @@ BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+SET search_path = public;
 
 DROP TRIGGER IF EXISTS cotacoes_updated_at ON cotacoes;
 CREATE TRIGGER cotacoes_updated_at
@@ -291,7 +292,8 @@ BEGIN
   ON CONFLICT DO NOTHING;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -304,8 +306,9 @@ CREATE TRIGGER on_auth_user_created
 -- ============================================================
 
 -- View: todas as contas (ativas, excluídas e não confirmadas)
-DROP VIEW IF EXISTS admin_accounts;
-CREATE VIEW admin_accounts AS
+DROP VIEW IF EXISTS admin_accounts CASCADE;
+CREATE VIEW admin_accounts
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   COALESCE(p.original_email, u.email) AS email,
@@ -331,8 +334,9 @@ LEFT JOIN auth.users u ON u.id = p.id
 ORDER BY p.created_at DESC;
 
 -- View: somente contas ativas (e-mail confirmado)
-DROP VIEW IF EXISTS active_accounts;
-CREATE VIEW active_accounts AS
+DROP VIEW IF EXISTS active_accounts CASCADE;
+CREATE VIEW active_accounts
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   u.email,
@@ -350,8 +354,9 @@ WHERE p.status = 'active'
 ORDER BY p.created_at DESC;
 
 -- View: cadastradas mas e-mail ainda não confirmado
-DROP VIEW IF EXISTS unconfirmed_accounts;
-CREATE VIEW unconfirmed_accounts AS
+DROP VIEW IF EXISTS unconfirmed_accounts CASCADE;
+CREATE VIEW unconfirmed_accounts
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   u.email,
@@ -365,8 +370,9 @@ WHERE p.status = 'active'
 ORDER BY p.created_at DESC;
 
 -- View: somente contas excluídas (e-mail original preservado)
-DROP VIEW IF EXISTS deleted_accounts;
-CREATE VIEW deleted_accounts AS
+DROP VIEW IF EXISTS deleted_accounts CASCADE;
+CREATE VIEW deleted_accounts
+WITH (security_invoker = true) AS
 SELECT
   p.id,
   p.original_email   AS email,
@@ -380,6 +386,20 @@ SELECT
 FROM profiles p
 WHERE p.status = 'deleted'
 ORDER BY p.deleted_at DESC;
+
+REVOKE ALL ON TABLE public.admin_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.active_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.unconfirmed_accounts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.deleted_accounts FROM anon, authenticated;
+
+GRANT SELECT ON TABLE public.admin_accounts TO service_role;
+GRANT SELECT ON TABLE public.active_accounts TO service_role;
+GRANT SELECT ON TABLE public.unconfirmed_accounts TO service_role;
+GRANT SELECT ON TABLE public.deleted_accounts TO service_role;
+
+ALTER TABLE IF EXISTS public.cotacoes_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.cotacoes_links FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.cotacoes_links FROM anon, authenticated;
 
 -- Função para excluir conta (chamada pelo app via RPC)
 -- 1. Salva o e-mail original no perfil
@@ -413,4 +433,5 @@ BEGIN
     updated_at          = now()
   WHERE id = v_uid;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;

@@ -41,10 +41,12 @@ CREATE TABLE IF NOT EXISTS cotacao_aceites (
   produto_nome    TEXT,
   fornecedor      TEXT,
   valor_ha        NUMERIC(12,2),
+  compra_realizada_em TIMESTAMPTZ,
   aceito_em       TIMESTAMPTZ DEFAULT now(),
   produtor_nome   TEXT,
   produtor_email  TEXT
 );
+ALTER TABLE cotacao_aceites ADD COLUMN IF NOT EXISTS compra_realizada_em TIMESTAMPTZ;
 ALTER TABLE cotacao_aceites ENABLE ROW LEVEL SECURITY;
 
 -- Leitura pública por approval_token (via cotacao_id)
@@ -113,4 +115,5 @@ BEGIN
 
   RETURN v_titulo;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public;

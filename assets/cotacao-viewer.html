@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Agrocota - Painel de Decisao</title>
+  <title>OAgroCota - Painel de Decisao</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
@@ -69,6 +69,7 @@
     }
     .status-pill.pendente { border-color: var(--amber); color: var(--amber); }
     .status-pill.aprovado { border-color: var(--primary); color: var(--primary); }
+    .status-pill.recusado { border-color: var(--red); color: var(--red); }
 
     /* PAGE */
     .page { max-width: 620px; margin: 0 auto; padding: 28px 16px 150px; }
@@ -100,7 +101,6 @@
     .chart-canvas-wrap { position: relative; width: 190px; height: 190px; flex-shrink: 0; }
     .chart-canvas-wrap.bar { width: 100%; height: 230px; }
     canvas#donut { width: 190px !important; height: 190px !important; }
-    canvas#bars { width: 100% !important; height: 230px !important; }
     .chart-center {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
       text-align: center; pointer-events: none;
@@ -112,10 +112,15 @@
       width: 100%;
       font-size: .62rem;
       color: var(--text-mid);
-      text-transform: uppercase;
-      letter-spacing: .08em;
       border-top: 1px solid var(--border);
       padding-top: 10px;
+      line-height: 1.6;
+    }
+    .chart-note strong {
+      color: #d1d5db;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: .58rem;
     }
     .legend-row { display: flex; align-items: center; gap: 10px; }
     .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -129,14 +134,43 @@
     .cat-section-header {
       display: flex; align-items: center; gap: 12px;
       margin-bottom: 14px; margin-top: 28px;
-      padding: 10px 14px;
+      padding: 12px 14px 10px;
       background: var(--surface2); border: 1px solid var(--border2);
       border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cat-section-header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #ffffff;
+      opacity: 0.9;
     }
     .cat-section-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .cat-section-title { font-size: .88rem; font-weight: 900; color: var(--text); flex: 1; }
     .cat-section-count { font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); }
     .cat-section-min { font-family: 'JetBrains Mono', monospace; font-size: .72rem; font-weight: 700; color: var(--primary); white-space: nowrap; }
+    .cat-clear-btn {
+      width: 22px;
+      height: 22px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--text-mid);
+      border-radius: 999px;
+      font-size: .8rem;
+      font-weight: 900;
+      line-height: 1;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cat-clear-btn:hover { border-color: var(--primary); color: var(--primary); }
 
     /* PRODUCT GROUPS */
     .prod-group { margin-bottom: 20px; }
@@ -158,7 +192,8 @@
       padding: 3px 7px; border-radius: 6px; background: var(--primary); color: #000;
       opacity: 0; flex-shrink: 0; transition: opacity .2s;
     }
-    .option-card.cheapest .option-badge { opacity: 1; }
+    .option-card.cheapest .option-badge,
+    .option-card.expensive .option-badge { opacity: 1; }
     .option-info { flex: 1; min-width: 0; }
     .option-forn { font-size: .83rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .option-cat  { font-size: .63rem; font-weight: 600; color: var(--text-mid); margin-top: 2px; }
@@ -184,6 +219,12 @@
       background: var(--primary-dim); border: 1px solid var(--primary);
       border-radius: 18px; padding: 22px; text-align: center; margin-bottom: 28px;
     }
+    .approved-card.recusado {
+      background: rgba(239,68,68,.08);
+      border-color: var(--red);
+    }
+    .approved-card.recusado .approved-title,
+    .approved-card.recusado .approved-ts { color: var(--red); }
     .approved-title { font-size: .95rem; font-weight: 900; color: var(--primary); margin-bottom: 5px; }
     .approved-sub   { font-size: .75rem; color: var(--text-mid); }
     .approved-ts    { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--primary); margin-top: 8px; }
@@ -209,6 +250,28 @@
     }
     .btn-confirm:active { transform: scale(.97); }
     .btn-confirm:disabled { opacity: .3; cursor: not-allowed; box-shadow: none; }
+    .footer-actions {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 10px;
+    }
+    .btn-reject {
+      width: 100%;
+      background: transparent;
+      color: #fca5a5;
+      border: 1px solid rgba(239,68,68,.45);
+      padding: 16px 14px;
+      border-radius: 15px;
+      font-family: 'Inter', sans-serif;
+      font-size: .72rem;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity .18s, transform .12s;
+    }
+    .btn-reject:active { transform: scale(.97); }
+    .btn-reject:disabled { opacity: .35; cursor: not-allowed; }
 
     /* MODAL */
     .modal-backdrop {
@@ -278,7 +341,7 @@
 <div id="app" style="display:none">
 
   <div class="top-bar">
-    <span class="brand">Agrocota</span>
+    <span class="brand">OAgroCota</span>
     <span class="status-pill pendente" id="status-pill">Aguardando aceite</span>
   </div>
 
@@ -292,7 +355,7 @@
 
     <!-- APPROVED BANNER -->
     <div class="approved-card" id="approved-banner" style="display:none">
-      <div class="approved-title">Aceite Digital Registrado</div>
+      <div class="approved-title">Aceite da Cotação Registrado</div>
       <div class="approved-sub">Seu consultor foi notificado. Obrigado pela confirmacao.</div>
       <div class="approved-ts" id="approved-ts"></div>
     </div>
@@ -310,11 +373,11 @@
           <span class="chart-center-value" id="center-total">R$ 0,00</span>
         </div>
       </div>
-      <div class="chart-canvas-wrap bar">
-        <canvas id="bars"></canvas>
-      </div>
       <div class="chart-legend" id="chart-legend"></div>
-      <div class="chart-note">Barras: minimo x selecionado x maximo por categoria</div>
+      <div class="chart-note">
+        <strong>Custo por categoria:</strong><br />
+        O gráfico mostra a cotação completa importada. A lista traz a porcentagem e o valor de cada categoria.
+      </div>
     </div>
 
     <!-- PRODUCTS -->
@@ -323,9 +386,8 @@
       <div class="section-line"></div>
     </div>
     <p style="font-size:.72rem;color:var(--text-mid);margin-bottom:22px;line-height:1.6">
-      Escolha o fornecedor de sua preferencia para cada produto.
-      Os produtos estao organizados por categoria (Sementes, Fertilizantes, Herbicidas, etc.).
-      O total e atualizado automaticamente.
+      Esta visualização exibe todos os itens da cotação importada.
+      O aceite é do orçamento completo (não há seleção manual por categoria).
     </p>
     <div id="prod-list"></div>
 
@@ -337,29 +399,46 @@
       <div class="total-row">
         <div>
           <div class="total-label-sm">Investimento estimado</div>
-          <span class="total-sub" id="footer-count">0 produtos selecionados</span>
+          <span class="total-sub" id="footer-count">0 itens na cotação</span>
         </div>
         <div style="text-align:right">
           <div class="total-amount" id="footer-total">R$ 0,00</div>
-          <span class="total-sub">por hectare</span>
+          <span class="total-sub" id="footer-unit">por hectare</span>
         </div>
       </div>
-      <button class="btn-confirm" id="btn-aceite" onclick="abrirModal()" disabled>
-        Confirmar e Dar Aceite Digital
-      </button>
+      <div class="footer-actions">
+        <button class="btn-reject" id="btn-recusar" onclick="abrirModalRecusa()">
+          Recusar
+        </button>
+        <button class="btn-confirm" id="btn-aceite" onclick="abrirModal()" disabled>
+          Confirmar Aceite da Cotação
+        </button>
+      </div>
     </div>
   </div>
 
+</div>
+
+<!-- MODAL RECUSA -->
+<div class="modal-backdrop" id="modal-recusar-backdrop" onclick="fecharModalRecusaExterno(event)">
+  <div class="modal">
+    <div class="modal-title">Confirmar Recusa</div>
+    <div class="modal-sub">Ao recusar, o consultor será notificado e esta cotação ficará como recusada.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="fecharModalRecusa()">Voltar</button>
+      <button class="btn-confirm-modal" id="btn-recusar-modal" onclick="confirmarRecusa()" style="background:#ef4444;color:#fff;">Confirmar Recusa</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL -->
 <div class="modal-backdrop" id="modal-backdrop" onclick="fecharModalExterno(event)">
   <div class="modal">
     <div class="modal-title">Confirmar Aceite</div>
-    <div class="modal-sub">Revise sua selecao. Esta acao sera registrada com data, hora e dispositivo.</div>
+    <div class="modal-sub">Você está confirmando o aceite da cotação completa. Esta ação será registrada com data, hora e dispositivo.</div>
     <div class="modal-summary" id="modal-summary"></div>
     <div class="modal-total">
-      <span class="modal-total-label">Total estimado / ha</span>
+      <span class="modal-total-label" id="modal-total-label">Total estimado / ha</span>
       <span class="modal-total-val" id="modal-total-val">R$ 0,00</span>
     </div>
     <div class="modal-actions">
@@ -369,36 +448,36 @@
   </div>
 </div>
 
-<footer class="page-footer">Agrocota 2025 &mdash; Plataforma de Decisao Agricola</footer>
+<footer class="page-footer">OAgroCota 2025 &mdash; Plataforma de Decisao Agricola</footer>
 
 <script>
   const SUPABASE_URL  = 'https://fafjknchnibdflpqyssf.supabase.co';
   const SUPABASE_ANON = 'sb_publishable_3HDU_nViFfOubXqNplV5ow_8FV0Ix0r';
 
-  const PALETTE = [
-    '#22c55e','#4ade80','#16a34a','#86efac',
-    '#10b981','#059669','#6ee7b7','#34d399',
-    '#15803d','#166534','#14532d','#bbf7d0',
-  ];
-
-  // Dynamic color map per category (consistent across chart + section headers)
-  const CAT_COLORS = {};
-  let _catColorIdx = 0;
+  /* Cores agrícolas por categoria — idêntico ao theme/colors (app, PDFs, viewers) */
+  const CAT_AGRICOLA = {
+    Fungicida: '#7C3AED', Herbicida: '#EA580C', Inseticida: '#2563EB', Nematicida: '#0891B2', Defensivo: '#DC2626',
+    Fertilizantes: '#16A34A', 'Nutricao / Fertilizante Foliar': '#16A34A', 'Fertilizante de Base': '#16A34A',
+    Sementes: '#92400E', 'Sementes / Hibridos': '#92400E',
+    Adjuvante: '#CA8A04', Biologico: '#0D9488', 'Corretivo de Solo': '#78716C',
+  };
+  const CAT_FALLBACK = ['#6366F1', '#DB2777', '#059669', '#F59E0B', '#64748B'];
+  const _catColorMap = {};
   function getCatColor(cat) {
-    if(!CAT_COLORS[cat]) {
-      CAT_COLORS[cat] = PALETTE[_catColorIdx % PALETTE.length];
-      _catColorIdx++;
-    }
-    return CAT_COLORS[cat];
+    const c = String(cat || '').trim();
+    if (CAT_AGRICOLA[c]) return CAT_AGRICOLA[c];
+    if (!_catColorMap[c]) _catColorMap[c] = CAT_FALLBACK[Object.keys(_catColorMap).length % CAT_FALLBACK.length];
+    return _catColorMap[c];
   }
 
   let chart     = null;
   let barChart  = null;
   let cotacao   = null;
   let allItens  = [];
-  let escolhas  = {};
   let approved  = false;
   let totalProdutos = 0;
+  let totalOpcoes = 0;
+  let areaFactor = 1;
 
   /* ── UTILS ──────────────────────────────────── */
   function fmtBRL(n) {
@@ -421,6 +500,15 @@
   function makeProdKey(cat, prod) {
     return (cat || 'Insumo') + '||' + (prod || 'Produto');
   }
+  function isTalhaoMode() {
+    return Number(areaFactor || 0) > 0 && Number(areaFactor || 0) !== 1;
+  }
+  function valorSuffixCompact() {
+    return isTalhaoMode() ? '' : '/ha';
+  }
+  function valorUnitText() {
+    return isTalhaoMode() ? 'no talhão' : 'por hectare';
+  }
 
   async function rpc(fn, params) {
     const r = await fetch(SUPABASE_URL+'/rest/v1/rpc/'+fn, {
@@ -428,7 +516,15 @@
       headers:{apikey:SUPABASE_ANON, Authorization:'Bearer '+SUPABASE_ANON, 'Content-Type':'application/json'},
       body: JSON.stringify(params),
     });
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(!r.ok) {
+      const raw = await r.text();
+      let detail = raw;
+      try {
+        const parsed = JSON.parse(raw || '{}');
+        detail = parsed?.message || parsed?.error || parsed?.hint || parsed?.details || raw;
+      } catch(_) {}
+      throw new Error('HTTP '+r.status+' - '+(detail || 'Erro desconhecido no RPC'));
+    }
     return r.json();
   }
 
@@ -467,58 +563,35 @@
         cutout:'80%',
         plugins:{
           legend:{ display:false },
-          tooltip:{ callbacks:{ label: ctx=>' R$ '+fmtBRL(ctx.parsed)+'/ha' } }
+          tooltip:{ callbacks:{ label: ctx=>' R$ '+fmtBRL(ctx.parsed)+valorSuffixCompact() } }
         },
         animation:{ duration:700, easing:'easeInOutQuart' },
       }
     });
   }
 
-  function buildBarChart(labels, minValues, selectedValues, maxValues) {
-    const ctx = document.getElementById('bars').getContext('2d');
-    if(barChart) barChart.destroy();
-    barChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Minimo', data: minValues, backgroundColor: '#10b981' },
-          { label: 'Selecionado', data: selectedValues, backgroundColor: '#22c55e' },
-          { label: 'Maximo', data: maxValues, backgroundColor: '#ef4444' },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { labels: { color: '#cfcfcf', boxWidth: 10, boxHeight: 10 } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: R$ ${fmtBRL(ctx.parsed.y)}/ha` } },
-        },
-        scales: {
-          x: { ticks: { color: '#9ca3af', maxRotation: 0, minRotation: 0 }, grid: { color: 'rgba(255,255,255,0.04)' } },
-          y: {
-            ticks: { color: '#9ca3af', callback: value => `R$ ${fmtBRL(value)}` },
-            grid: { color: 'rgba(255,255,255,0.08)' },
-          },
-        },
-      },
-    });
-  }
-
   function buildLegend(entries, colors, total) {
     const el = document.getElementById('chart-legend');
     el.innerHTML = '';
+    if (!entries.length) {
+      const row = document.createElement('div');
+      row.className = 'legend-row';
+      row.innerHTML = '<div class="legend-name" style="color:var(--text-mid)">Nenhum item selecionado</div>';
+      el.appendChild(row);
+      return;
+    }
     entries.forEach(([cat,val],i) => {
       const pct = total > 0 ? (val/total*100) : 0;
       const row = document.createElement('div');
       row.className = 'legend-row';
       row.innerHTML = '<div class="legend-dot" style="background:'+colors[i]+'"></div>'
-        +'<div class="legend-name">'+esc(cat)+'</div>'
+        +'<div class="legend-name">'+esc(cat)+' <span style="color:var(--text-mid)">('+pct.toFixed(1)+'%)</span></div>'
         +'<div class="legend-bar-wrap"><div class="legend-bar" style="width:'+pct.toFixed(1)+'%;background:'+colors[i]+'"></div></div>'
         +'<div class="legend-val" style="color:'+colors[i]+'">R$ '+fmtBRL(val)+'</div>';
       el.appendChild(row);
     });
   }
+
 
   /* ── PRODUCTS (grouped by category) ─────────── */
   function renderProdutos(itens) {
@@ -536,15 +609,21 @@
     container.innerHTML = '';
 
     // 2. Render each category section
-    Object.entries(byCat).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([cat, prods]) => {
+    const catEntries = Object.entries(byCat).map(([cat, prods]) => {
+      const prodNames = Object.keys(prods);
+      const catTotal = prodNames.reduce((s,p)=>{
+        const vals = prods[p] || [];
+        return s + vals.reduce((acc, it) => acc + Number(it?.valor_ha || 0), 0);
+      }, 0);
+      return { cat, prods, catTotal };
+    });
+
+    catEntries
+      .sort((a,b)=>b.catTotal-a.catTotal)
+      .forEach(({ cat, prods, catTotal }) => {
       const color      = getCatColor(cat);
       const prodNames  = Object.keys(prods);
       const totalOpts  = prodNames.reduce((s,p)=>s+prods[p].length, 0);
-      // Cheapest sum for this category (min per product)
-      const catMin     = prodNames.reduce((s,p)=>{
-        const sorted = [...prods[p]].sort((a,b)=>(a.valor_ha||0)-(b.valor_ha||0));
-        return s + Number(sorted[0].valor_ha || 0);
-      }, 0);
 
       // Category header
       const section = document.createElement('div');
@@ -555,10 +634,20 @@
       hdr.innerHTML = '<div class="cat-section-dot" style="background:'+color+'"></div>'
         + '<span class="cat-section-title">'+esc(cat)+'</span>'
         + '<span class="cat-section-count">'+prodNames.length+' produto'+(prodNames.length>1?'s':'')+' &mdash; '+totalOpts+' opcao'+(totalOpts>1?'oes':'')+'</span>'
-        + '<span class="cat-section-min">R$ '+fmtBRL(catMin)+'/ha</span>';
+        + '<span class="cat-section-min">R$ '+fmtBRL(catTotal)+valorSuffixCompact()+'</span>';
       section.appendChild(hdr);
 
       // Products within category
+      const catAllOptions = Object.values(prods).flatMap(opts => opts);
+      const catMin = catAllOptions.reduce((acc, it) => {
+        if(!acc) return it;
+        return Number(it.valor_ha||0) < Number(acc.valor_ha||0) ? it : acc;
+      }, null);
+      const catMax = catAllOptions.reduce((acc, it) => {
+        if(!acc) return it;
+        return Number(it.valor_ha||0) > Number(acc.valor_ha||0) ? it : acc;
+      }, null);
+
       Object.entries(prods).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([nome, opts]) => {
         const sorted = [...opts].sort((a,b)=>(a.valor_ha||0)-(b.valor_ha||0));
         const group  = document.createElement('div');
@@ -568,32 +657,30 @@
                  + '<div class="prod-group-sub">'+sorted.length+' '+(sorted.length===1?'opcao de fornecedor':'opcoes de fornecedor')+'</div>';
 
         sorted.forEach((it,idx) => {
-          const key = makeProdKey(cat, nome);
-          const isCheap    = idx === 0;
-          const isSelected = escolhas[key] && String(escolhas[key].id) === String(it.id);
+          const isCategoryMin = !!catMin && String(it.id) === String(catMin.id);
+          const isCategoryMax = !!catMax && String(it.id) === String(catMax.id) && (!catMin || String(catMax.id) !== String(catMin.id));
+          const itemId = String(it.id || idx);
           const det = [];
           if (it.dose_ha != null && String(it.dose_ha) !== '') det.push('Dose: '+esc(String(it.dose_ha)));
           if (it.unidade) det.push('Unidade: '+esc(String(it.unidade)));
           if (it.preco_unitario != null && String(it.preco_unitario) !== '') det.push('R$ unit: '+fmtBRL(Number(it.preco_unitario||0)));
 
-          html += '<div class="option-card'+(isCheap?' cheapest':'')+(isSelected?' selected':'')+'"'
-                 +' data-key="'+escA(key)+'"'
+               html += '<div class="option-card'+(isCategoryMin?' cheapest':'')+(isCategoryMax?' expensive':'')+'"'
                  +' data-prod="'+escA(nome)+'"'
-                 +' data-id="'+escA(String(it.id || idx))+'"'
+                 +' data-id="'+escA(itemId)+'"'
                  +' data-valor="'+(it.valor_ha||0)+'"'
                  +' data-forn="'+escA(it.fornecedor||'N/I')+'"'
-                 +' data-cat="'+escA(it.categoria||'Insumo')+'"'
-                 +' onclick="selecionarOpcao(this)">'
-                 + '<div class="radio-dot"></div>'
+                 +' data-cat="'+escA(cat||'Insumo')+'"'
+                 + '>'
                  + '<div class="option-info">'
                  +   '<div class="option-forn">'+esc(it.fornecedor||'N/I')+'</div>'
                  +   (det.length ? '<div class="option-cat">'+det.join(' · ')+'</div>' : '')
                  + '</div>'
                  + '<div class="option-price-col">'
                  +   '<div class="option-price" style="color:'+color+'">R$ '+fmtBRL(it.valor_ha||0)+'</div>'
-                 +   '<span class="option-price-unit">por hectare</span>'
+                 +   '<span class="option-price-unit">'+valorUnitText()+'</span>'
                  + '</div>'
-                 + '<div class="option-badge">Menor</div>'
+                 + '<div class="option-badge">'+(isCategoryMin ? 'Menor' : (isCategoryMax ? 'Maior' : ''))+'</div>'
                  + '</div>';
         });
 
@@ -605,37 +692,21 @@
     });
   }
 
-  /* ── SELECTION ──────────────────────────────── */
-  function selecionarOpcao(card) {
-    if(approved) return;
-    const key   = card.dataset.key;
-    const prod  = card.dataset.prod;
-    const id    = card.dataset.id;
-    const valor = parseFloat(card.dataset.valor) || 0;
-    const forn  = card.dataset.forn;
-    const cat   = card.dataset.cat;
-
-    document.querySelectorAll('.option-card[data-key="'+escA(key)+'"]').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-
-    escolhas[key] = { id, valor, fornecedor: forn, categoria: cat, produto: prod };
-    sync();
-  }
-
   function totalSelecionado() {
-    return Object.values(escolhas).reduce((a,v)=>a+(v.valor||0), 0);
+    return allItens.reduce((a, it) => a + Number(it?.valor_ha || 0), 0);
   }
 
   function sync() {
     const total = totalSelecionado();
-    const count = Object.keys(escolhas).length;
+    const count = allItens.length;
 
     // Footer
     document.getElementById('footer-total').textContent = 'R$ '+fmtBRL(total);
     document.getElementById('center-total').textContent = 'R$ '+fmtBRL(total);
-    document.getElementById('center-label').textContent = count > 0 ? 'Selecionado / ha' : 'Minimo / ha';
-    document.getElementById('footer-count').textContent = count+'/'+totalProdutos+' produtos selecionados';
-    document.getElementById('btn-aceite').disabled = count === 0 || approved || count < totalProdutos;
+    document.getElementById('center-label').textContent = isTalhaoMode() ? 'Total da cotação no talhão' : 'Total da cotação / ha';
+    document.getElementById('footer-count').textContent = count+' itens na cotação';
+    document.getElementById('footer-unit').textContent = valorUnitText();
+    document.getElementById('btn-aceite').disabled = count === 0 || approved;
 
     const byCatProd = {};
     allItens.forEach(it => {
@@ -648,9 +719,9 @@
     });
 
     const selectedByCat = {};
-    Object.values(escolhas).forEach(v => {
+    allItens.forEach(v => {
       const c = v.categoria || 'Insumo';
-      selectedByCat[c] = (selectedByCat[c] || 0) + Number(v.valor || 0);
+      selectedByCat[c] = (selectedByCat[c] || 0) + Number(v.valor_ha || 0);
     });
 
     const rows = Object.entries(byCatProd).map(([cat, prodMap]) => {
@@ -671,65 +742,83 @@
 
     const donutRows = rows.map(r => ({
       cat: r.cat,
-      value: count > 0 ? r.selected : r.min,
+      value: r.selected,
     })).filter(r => r.value > 0);
 
     const donutEntries = donutRows.map(r => [r.cat, r.value]);
     const colors  = donutEntries.map(([c])=>getCatColor(c));
-    buildChart(donutEntries.map(e=>e[0]), donutEntries.map(e=>e[1]), colors);
-    buildLegend(donutEntries, colors, donutEntries.reduce((a,[,v])=>a+v,0));
+    if (donutEntries.length === 0) {
+      buildChart(['Sem selecao'], [1], ['#1e1e1e']);
+      buildLegend([], [], 0);
+    } else {
+      buildChart(donutEntries.map(e=>e[0]), donutEntries.map(e=>e[1]), colors);
+      buildLegend(donutEntries, colors, donutEntries.reduce((a,[,v])=>a+v,0));
+    }
 
-    buildBarChart(
-      rows.map(r => r.cat),
-      rows.map(r => r.min),
-      rows.map(r => r.selected),
-      rows.map(r => r.max),
-    );
   }
 
   /* ── MODAL ──────────────────────────────────── */
   function abrirModal() {
-    if (Object.keys(escolhas).length < totalProdutos) {
-      alert('Selecione um fornecedor para cada produto antes de confirmar o aceite.');
+    if (allItens.length === 0) {
+      alert('Não há itens para confirmar nesta cotação.');
       return;
     }
 
     const total = totalSelecionado();
     const el    = document.getElementById('modal-summary');
     el.innerHTML = '';
-    Object.values(escolhas)
+    allItens
+      .map((it) => ({
+        categoria: it?.categoria || 'Insumo',
+        produto: it?.produto_nome || 'Produto',
+        fornecedor: it?.fornecedor || 'N/I',
+        valor: Number(it?.valor_ha || 0),
+      }))
       .sort((a,b)=>(a.categoria||'').localeCompare(b.categoria||'') || (a.produto||'').localeCompare(b.produto||''))
       .forEach((info) => {
       const row = document.createElement('div');
       row.className = 'modal-item';
       row.innerHTML = '<div><div class="modal-item-name">'+esc(info.categoria)+' - '+esc(info.produto)+'</div><div class="modal-item-forn">'+esc(info.fornecedor)+'</div></div>'
-                    + '<div class="modal-item-price">R$ '+fmtBRL(info.valor)+'/ha</div>';
+                    + '<div class="modal-item-price">R$ '+fmtBRL(info.valor)+valorSuffixCompact()+'</div>';
       el.appendChild(row);
     });
-    document.getElementById('modal-total-val').textContent = 'R$ '+fmtBRL(total)+'/ha';
+    document.getElementById('modal-total-label').textContent = isTalhaoMode() ? 'Total estimado no talhão' : 'Total estimado / ha';
+    document.getElementById('modal-total-val').textContent = 'R$ '+fmtBRL(total)+valorSuffixCompact();
     document.getElementById('modal-backdrop').classList.add('open');
   }
   function fecharModal() { document.getElementById('modal-backdrop').classList.remove('open'); }
   function fecharModalExterno(e) { if(e.target===document.getElementById('modal-backdrop')) fecharModal(); }
+
+  function abrirModalRecusa() {
+    if (approved) return;
+    document.getElementById('modal-recusar-backdrop').classList.add('open');
+  }
+  function fecharModalRecusa() { document.getElementById('modal-recusar-backdrop').classList.remove('open'); }
+  function fecharModalRecusaExterno(e) { if(e.target===document.getElementById('modal-recusar-backdrop')) fecharModalRecusa(); }
 
   /* ── ACEITE ─────────────────────────────────── */
   async function confirmarAceite() {
     const btn = document.getElementById('btn-confirm-modal');
     btn.disabled    = true;
     btn.textContent = 'Registrando...';
+    let aceiteRegistrado = false;
     try {
-      const itensSelecionados = Object.values(escolhas).map(v=>v.id);
       const total             = totalSelecionado();
       await rpc('registrar_aceite_cotacao', {
         p_cotacao_id: cotacao.id,
-        p_itens:      itensSelecionados,
+        p_itens:      [],
         p_total_ha:   total,
         p_user_agent: navigator.userAgent,
       });
+      aceiteRegistrado = true;
     } catch(e) {
-      // RPC may not exist yet; proceed with UI feedback
       console.warn('aceite RPC:', e.message);
+      alert('Não foi possível registrar o aceite no servidor.\n\nDetalhe: '+(e?.message || 'erro desconhecido'));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Confirmar Aceite';
     }
+    if (!aceiteRegistrado) return;
     fecharModal();
     setAprovado(new Date().toISOString());
   }
@@ -738,9 +827,51 @@
     approved = true;
     document.getElementById('status-pill').textContent = 'Aceite registrado';
     document.getElementById('status-pill').className   = 'status-pill aprovado';
+    document.getElementById('approved-banner').classList.remove('recusado');
+    document.querySelector('#approved-banner .approved-title').textContent = 'Aceite da Cotação Registrado';
+    document.querySelector('#approved-banner .approved-sub').textContent = 'Seu consultor foi notificado. Obrigado pela confirmacao.';
     document.getElementById('approved-banner').style.display = 'block';
     document.getElementById('approved-ts').textContent = 'Registrado em '+fmtDateTime(ts);
     document.getElementById('btn-aceite').disabled = true;
+    document.getElementById('btn-recusar').disabled = true;
+    document.getElementById('sticky-footer').style.display = 'none';
+    window.scrollTo({ top:0, behavior:'smooth' });
+  }
+
+  async function confirmarRecusa() {
+    const btn = document.getElementById('btn-recusar-modal');
+    btn.disabled = true;
+    btn.textContent = 'Registrando...';
+    let recusaRegistrada = false;
+    try {
+      await rpc('registrar_recusa_cotacao', {
+        p_cotacao_id: cotacao.id,
+        p_user_agent: navigator.userAgent,
+      });
+      recusaRegistrada = true;
+    } catch(e) {
+      console.warn('recusa RPC:', e.message);
+      alert('Não foi possível registrar a recusa no servidor.\n\nDetalhe: '+(e?.message || 'erro desconhecido'));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Confirmar Recusa';
+    }
+    if (!recusaRegistrada) return;
+    fecharModalRecusa();
+    setRecusado(new Date().toISOString());
+  }
+
+  function setRecusado(ts) {
+    approved = true;
+    document.getElementById('status-pill').textContent = 'Recusada';
+    document.getElementById('status-pill').className   = 'status-pill recusado';
+    document.getElementById('approved-banner').classList.add('recusado');
+    document.querySelector('#approved-banner .approved-title').textContent = 'Cotação Recusada';
+    document.querySelector('#approved-banner .approved-sub').textContent = 'Seu consultor foi notificado da recusa.';
+    document.getElementById('approved-banner').style.display = 'block';
+    document.getElementById('approved-ts').textContent = 'Registrado em '+fmtDateTime(ts);
+    document.getElementById('btn-aceite').disabled = true;
+    document.getElementById('btn-recusar').disabled = true;
     document.getElementById('sticky-footer').style.display = 'none';
     window.scrollTo({ top:0, behavior:'smooth' });
   }
@@ -779,32 +910,40 @@
       // Items
       allItens = await rpc('get_itens_by_cotacao',{ p_cotacao_id: cotacao.id });
 
+      const talhaoArea = Number(cotacao?.talhao_area_ha || 0);
+      if (talhaoArea > 0) {
+        areaFactor = talhaoArea;
+        allItens = (allItens || []).map(it => ({
+          ...it,
+          valor_ha: Number(it?.valor_ha || 0) * talhaoArea,
+        }));
+      } else {
+        areaFactor = 1;
+      }
+
+      // Restore approved/refused state
+      const aceiteEm = cotacao.aceite_em || cotacao.approved_at;
+      const cotacaoAprovada = cotacao.status==='aprovada' || cotacao.status==='aprovado' || !!aceiteEm;
+
       // Fill meta
-      document.title = cotacao.titulo || 'Cotacao Agrocota';
+      document.title = cotacao.titulo || 'Cotacao OAgroCota';
       document.getElementById('meta-titulo').textContent = cotacao.titulo || 'Cotacao';
       addMeta('Fazenda',   fazendaNome);
       addMeta('Cultura',   fazendaCultura);
       addMeta('Area',      fazendaArea);
+      if (cotacao?.talhao_nome) addMeta('Talhão', cotacao.talhao_nome + (Number(cotacao?.talhao_area_ha || 0) > 0 ? ` (${fmtBRL(Number(cotacao.talhao_area_ha))} ha)` : ''));
       addMeta('Data',      fmtDate(cotacao.created_at));
       addMeta('Consultor', consultorNome);
 
-      // Already approved?
-      if(cotacao.status==='aprovado' || cotacao.aceite_em){
-        approved = true;
-        document.getElementById('status-pill').textContent = 'Aceite registrado';
-        document.getElementById('status-pill').className   = 'status-pill aprovado';
-        document.getElementById('approved-banner').style.display = 'block';
-        document.getElementById('approved-ts').textContent = cotacao.aceite_em ? 'Registrado em '+fmtDateTime(cotacao.aceite_em) : '';
-        document.getElementById('sticky-footer').style.display = 'none';
+      // Already approved/refused?
+      if(cotacao.status==='recusada'){
+        setRecusado(aceiteEm || new Date().toISOString());
+      } else if(cotacao.status==='aprovada' || cotacao.status==='aprovado' || aceiteEm){
+        setAprovado(aceiteEm || new Date().toISOString());
       }
 
-      const byProd = {};
-      allItens.forEach(it => {
-        if(!it.produto_nome) return;
-        const key = makeProdKey(it.categoria || 'Insumo', it.produto_nome);
-        byProd[key] = true;
-      });
-      totalProdutos = Object.keys(byProd).length;
+      totalProdutos = allItens.filter((it) => !!it?.produto_nome).length;
+      totalOpcoes = allItens.length;
 
       renderProdutos(allItens);
       sync();

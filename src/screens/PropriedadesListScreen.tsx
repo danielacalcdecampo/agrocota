@@ -8,6 +8,9 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useConnectivity } from '../context/ConnectivityContext';
+import { getCache, setCache } from '../services/OfflineSyncService';
+import { useThemeMode } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList, 'PropriedadesList'> };
@@ -24,8 +27,12 @@ interface Fazenda {
   longitude: number | null;
 }
 
+const CACHE_KEY_FAZENDAS = (uid: string) => `fazendas_${uid}`;
+
 export default function PropriedadesListScreen({ navigation }: Props) {
   const { session } = useAuth();
+  const { isDark } = useThemeMode();
+  const { isOnline } = useConnectivity();
   const insets = useSafeAreaInsets();
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,14 +41,29 @@ export default function PropriedadesListScreen({ navigation }: Props) {
 
   const fetchFazendas = useCallback(async () => {
     if (!session?.user?.id) return;
-    const { data } = await supabase
-      .from('fazendas')
-      .select('id, nome, produtor_nome, municipio, estado, area_total_ha, cultura_principal, latitude, longitude')
-      .eq('consultor_id', session.user.id)
-      .order('nome');
-    setFazendas((data as Fazenda[]) ?? []);
-    setLoading(false);
-  }, [session]);
+    const cacheKey = CACHE_KEY_FAZENDAS(session.user.id);
+    if (!isOnline) {
+      const cached = await getCache<Fazenda[]>(cacheKey);
+      setFazendas(cached ?? []);
+      setLoading(false);
+      return;
+    }
+    try {
+      const { data } = await supabase
+        .from('fazendas')
+        .select('id, nome, produtor_nome, municipio, estado, area_total_ha, cultura_principal, latitude, longitude')
+        .eq('consultor_id', session.user.id)
+        .order('nome');
+      const list = (data as Fazenda[]) ?? [];
+      setFazendas(list);
+      await setCache(cacheKey, list);
+    } catch {
+      const cached = await getCache<Fazenda[]>(cacheKey);
+      setFazendas(cached ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, [session, isOnline]);
 
   useFocusEffect(useCallback(() => { setLoading(true); fetchFazendas(); }, [fetchFazendas]));
 
@@ -52,10 +74,25 @@ export default function PropriedadesListScreen({ navigation }: Props) {
     (f.produtor_nome ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
+  const palette = {
+    pageBg: isDark ? '#0F1712' : '#F7F8F7',
+    headerBg: isDark ? '#111D16' : '#1F4E1F',
+    searchWrapBg: isDark ? '#17241C' : '#FFFFFF',
+    searchBorder: isDark ? '#24372B' : '#eee',
+    searchInputBg: isDark ? '#1D2F24' : '#f2f4f2',
+    searchText: isDark ? '#E8F2EC' : '#222',
+    cardBg: isDark ? '#17241C' : '#fff',
+    cardBorder: isDark ? '#24372B' : '#ECF0EC',
+    cardNome: isDark ? '#E8F2EC' : '#1A2E1A',
+    emptyTitle: isDark ? '#DCEBDD' : '#555',
+    emptyDesc: isDark ? '#9FB4A7' : '#999',
+    chevron: isDark ? '#8EA394' : '#ccc',
+  };
+
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A3C1A" />
-      <View style={[s.header, { paddingTop: insets.top + 14 }]}>
+    <View style={[s.root, { backgroundColor: palette.pageBg }]}>
+      <StatusBar barStyle="light-content" backgroundColor={palette.headerBg} />
+      <View style={[s.header, { paddingTop: insets.top + 14, backgroundColor: palette.headerBg }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} activeOpacity={0.8}>
           <Text style={s.backTxt}>‹  Voltar</Text>
         </TouchableOpacity>
@@ -63,11 +100,11 @@ export default function PropriedadesListScreen({ navigation }: Props) {
         <View style={{ width: 88 }} />
       </View>
 
-      <View style={s.searchWrap}>
+      <View style={[s.searchWrap, { backgroundColor: palette.searchWrapBg, borderBottomColor: palette.searchBorder }]}>
         <TextInput
-          style={s.searchInput}
+          style={[s.searchInput, { backgroundColor: palette.searchInputBg, color: palette.searchText }]}
           placeholder="Buscar por nome ou produtor..."
-          placeholderTextColor="#aaa"
+          placeholderTextColor={isDark ? '#8EA394' : '#aaa'}
           value={search}
           onChangeText={setSearch}
         />
@@ -79,32 +116,33 @@ export default function PropriedadesListScreen({ navigation }: Props) {
         <FlatList
           data={filtered}
           keyExtractor={i => i.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2E7D32']} />}
           contentContainerStyle={filtered.length === 0 ? s.center : s.list}
           ListEmptyComponent={
             <View style={s.emptyWrap}>
-              <Text style={s.emptyTitle}>Nenhuma propriedade</Text>
-              <Text style={s.emptyDesc}>Toque em + para cadastrar a primeira</Text>
+              <Text style={[s.emptyTitle, { color: palette.emptyTitle }]}>Nenhuma propriedade</Text>
+              <Text style={[s.emptyDesc, { color: palette.emptyDesc }]}>Toque em + para cadastrar a primeira</Text>
             </View>
           }
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={s.card}
+              style={[s.card, { backgroundColor: palette.cardBg, borderColor: palette.cardBorder }]}
               activeOpacity={0.85}
               onPress={() => navigation.navigate('DetalhePropriedade', { fazendaId: item.id })}
             >
               <View style={s.cardAccent} />
               <View style={s.cardBody}>
-                <Text style={s.cardNome}>{item.nome}</Text>
+                <Text style={[s.cardNome, { color: palette.cardNome }]}>{item.nome}</Text>
                 {item.produtor_nome ? <Text style={s.cardProd}>{item.produtor_nome}</Text> : null}
                 <View style={s.cardMeta}>
                   {item.municipio ? <Text style={s.metaTag}>{item.municipio}{item.estado ? `/${item.estado}` : ''}</Text> : null}
                   {item.area_total_ha ? <Text style={s.metaTag}>{item.area_total_ha} ha</Text> : null}
                   {item.cultura_principal ? <Text style={s.metaTag}>{item.cultura_principal}</Text> : null}
-                  {item.latitude ? <Text style={s.metaTagGps}>📍 GPS</Text> : null}
                 </View>
               </View>
-              <Text style={s.chevron}>{'>'}</Text>
+              <Text style={[s.chevron, { color: palette.chevron }]}>{'>'}</Text>
             </TouchableOpacity>
           )}
         />
@@ -125,6 +163,7 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F7F8F7' },
   header: {
     backgroundColor: '#1F4E1F', paddingTop: 14, paddingBottom: 16,
+    minHeight: 80,
     paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: {
@@ -151,7 +190,6 @@ const s = StyleSheet.create({
   cardProd: { fontSize: 13, color: '#4CAF50', fontWeight: '600', marginBottom: 6 },
   cardMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   metaTag: { backgroundColor: '#E8F5E9', color: '#2E7D32', fontSize: 11, fontWeight: '600', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  metaTagGps: { backgroundColor: '#E3F2FD', color: '#1565C0', fontSize: 11, fontWeight: '600', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   chevron: { fontSize: 18, color: '#ccc', marginRight: 14 },
   fab: {
     position: 'absolute', bottom: 28, right: 24, width: 56, height: 56,  // bottom overridden by inline style

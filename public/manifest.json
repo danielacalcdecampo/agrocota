@@ -1,0 +1,18 @@
+{
+  "name": "OAgroCota",
+  "short_name": "OAgroCota",
+  "description": "Gestão de cotações e propriedades agrícolas",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a5c25",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}
